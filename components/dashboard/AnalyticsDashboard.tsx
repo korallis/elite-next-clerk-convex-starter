@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { ChartRenderer } from "@/components/dashboard/ChartRenderer";
 import {
   Table,
   TableBody,
@@ -33,7 +34,7 @@ type ConnectionSummary = {
 type QueryResult = {
   sql: string;
   rationale: string;
-  chart: unknown;
+  chart: any;
   followUpQuestions: string[];
   rows: Record<string, unknown>[];
   columns: string[];
@@ -334,6 +335,9 @@ export function AnalyticsDashboard() {
                 </pre>
                 <p className="text-muted-foreground">Returned {result.rows.length} rows in {result.executionMs}ms.</p>
               </div>
+              {result.chart && result.rows.length > 0 && (
+                <ChartRenderer spec={result.chart} rows={result.rows} />
+              )}
               {result.rows.length > 0 && (
                 <div className="overflow-x-auto">
                   <Table>

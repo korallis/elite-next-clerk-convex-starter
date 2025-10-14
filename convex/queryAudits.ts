@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { assertAdminToken } from "./utils/adminAuth";
 
 export const record = mutation({
@@ -29,5 +29,39 @@ export const record = mutation({
       error: args.error,
       createdAt: Date.now(),
     });
+  },
+});
+
+export const countRecentByOrg = query({
+  args: {
+    adminToken: v.string(),
+    orgId: v.string(),
+    windowMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    const since = Date.now() - args.windowMs;
+    const docs = await ctx.db
+      .query("queryAudits")
+      .withIndex("byOrgCreatedAt", (q) => q.eq("orgId", args.orgId))
+      .collect();
+    return docs.filter((d) => d.createdAt >= since).length;
+  },
+});
+
+export const countRecentErrorsByOrg = query({
+  args: {
+    adminToken: v.string(),
+    orgId: v.string(),
+    windowMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    const since = Date.now() - args.windowMs;
+    const docs = await ctx.db
+      .query("queryAudits")
+      .withIndex("byOrgCreatedAt", (q) => q.eq("orgId", args.orgId))
+      .collect();
+    return docs.filter((d) => d.createdAt >= since && d.status === "error").length;
   },
 });

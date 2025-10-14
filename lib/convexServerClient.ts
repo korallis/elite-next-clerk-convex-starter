@@ -177,3 +177,23 @@ export async function recordQueryAudit(args: {
     error: args.error,
   });
 }
+
+export async function countOrgQueries(args: { orgId: string; windowMs: number }) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  return client.query(api.queryAudits.countRecentByOrg, {
+    adminToken,
+    orgId: args.orgId,
+    windowMs: args.windowMs,
+  });
+}
+
+export async function countOrgErrors(args: { orgId: string; windowMs: number }) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  return client.query(api.queryAudits.countRecentErrorsByOrg, {
+    adminToken,
+    orgId: args.orgId,
+    windowMs: args.windowMs,
+  });
+}

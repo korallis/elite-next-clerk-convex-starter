@@ -5,11 +5,13 @@ import {
   withSqlPool,
   executeReadOnlyQuery,
 } from "@/lib/mssql";
-import { getOpenAIClient, DEFAULT_ANALYST_MODEL } from "@/lib/openai";
+import { getOpenAIClient, DEFAULT_ANALYST_MODEL, DEFAULT_EMBEDDING_MODEL } from "@/lib/openai";
 import {
   getOrgConnection,
   listSemanticArtifacts,
   recordQueryAudit,
+  countOrgQueries,
+  countOrgErrors,
 } from "@/lib/convexServerClient";
 
 type QueryBody = {
@@ -88,6 +90,22 @@ export async function POST(request: Request) {
     );
   }
 
+  const dailyLimit = parseInt(process.env.ORG_DAILY_QUERY_LIMIT || "500", 10);
+  const recentCount = await countOrgQueries({ orgId, windowMs: 24 * 60 * 60 * 1000 });
+  if (recentCount >= dailyLimit) {
+    return NextResponse.json(
+      { error: "Daily query limit reached. Try again tomorrow or contact admin." },
+      { status: 429 }
+    );
+  }
+  const recentErrors = await countOrgErrors({ orgId, windowMs: 10 * 60 * 1000 });
+  if (recentErrors >= 5) {
+    return NextResponse.json(
+      { error: "Temporary pause due to repeated errors. Please try again later." },
+      { status: 429 }
+    );
+  }
+
   const tables = await listSemanticArtifacts({
     orgId,
     connectionId: body.connectionId,
@@ -100,7 +118,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const relevantTables = selectRelevantTables(body.question, tables);
+  const relevantTables = await selectRelevantTables(orgId, body.question, tables);
   const prompt = buildPrompt(body.question, relevantTables);
 
   const client = getOpenAIClient();
@@ -209,30 +227,26 @@ type TableArtifact = {
   };
 };
 
-function selectRelevantTables(question: string, tables: TableArtifact[]): TableArtifact[] {
-  const terms = question
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 2);
+async function selectRelevantTables(orgId: string, question: string, tables: TableArtifact[]): Promise<TableArtifact[]> {
+  try {
+    const client = getOpenAIClient();
+    const embedding = await client.embeddings.create({ model: DEFAULT_EMBEDDING_MODEL, input: question });
+    const vector = embedding.data[0].embedding;
+    const { searchTopK } = await import("@/lib/vectorStore");
+    const hits = await searchTopK(orgId, vector, 10);
+    const keys = new Set(hits.map((h) => h.id));
+    const ranked = tables.filter((t) => keys.has(`table:${t.artifactKey}`) || keys.has(`column:${t.artifactKey}`));
+    if (ranked.length > 0) return ranked.slice(0, 5);
+  } catch {}
+  const terms = question.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const scores = tables.map((table) => {
-    const content = [
-      table.artifactKey,
-      table.payload.description ?? "",
-      ...(table.payload.businessQuestions ?? []),
-      ...table.payload.columns.map((column) => column.name),
-    ]
+    const content = [table.artifactKey, table.payload.description ?? "", ...(table.payload.businessQuestions ?? []), ...table.payload.columns.map((c) => c.name)]
       .join(" ")
       .toLowerCase();
-    const score = terms.reduce(
-      (acc, term) => acc + (content.includes(term) ? 1 : 0),
-      0
-    );
+    const score = terms.reduce((acc, term) => acc + (content.includes(term) ? 1 : 0), 0);
     return { table, score };
   });
-  return scores
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map((entry) => entry.table);
+  return scores.sort((a, b) => b.score - a.score).slice(0, 5).map((e) => e.table);
 }
 
 function buildPrompt(question: string, tables: TableArtifact[]): string {

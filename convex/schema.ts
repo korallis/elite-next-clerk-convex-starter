@@ -76,4 +76,25 @@ export default defineSchema({
       .index("byOrg", ["orgId"])
       .index("byConnection", ["connectionId"])
       .index("byOrgCreatedAt", ["orgId", "createdAt"]),
+
+    dashboards: defineTable({
+      orgId: v.string(),
+      name: v.string(),
+      createdBy: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("byOrg", ["orgId"]),
+
+    dashboardTiles: defineTable({
+      orgId: v.string(),
+      dashboardId: v.id("dashboards"),
+      title: v.string(),
+      sql: v.string(),
+      chartSpec: v.string(),
+      order: v.number(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("byDashboard", ["dashboardId"]) 
+      .index("byOrg", ["orgId"]),
   });
