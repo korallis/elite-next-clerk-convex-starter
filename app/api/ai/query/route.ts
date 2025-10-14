@@ -1,0 +1,290 @@
+import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import {
+  sqlConnectionConfigSchema,
+  withSqlPool,
+  executeReadOnlyQuery,
+} from "@/lib/mssql";
+import { getOpenAIClient, DEFAULT_ANALYST_MODEL } from "@/lib/openai";
+import {
+  getOrgConnection,
+  listSemanticArtifacts,
+  recordQueryAudit,
+} from "@/lib/convexServerClient";
+
+type QueryBody = {
+  connectionId: string;
+  question: string;
+  maxRows?: number;
+};
+
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    sql: { type: "string" },
+    rationale: { type: "string" },
+    chart: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["table", "line", "bar", "area", "pie", "number"],
+        },
+        x: { type: ["string", "null"] },
+        y: {
+          type: "array",
+          items: { type: "string" },
+        },
+        grouping: { type: ["string", "null"] },
+        options: { type: "object", additionalProperties: true },
+      },
+      required: ["type"],
+    },
+    follow_up_questions: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+  required: ["sql", "rationale"],
+};
+
+export async function POST(request: Request) {
+  const { userId, orgId } = auth();
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!orgId) {
+    return NextResponse.json({ error: "Organization is required" }, { status: 400 });
+  }
+
+  let body: QueryBody;
+  try {
+    body = (await request.json()) as QueryBody;
+  } catch (error) {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.connectionId) {
+    return NextResponse.json({ error: "connectionId is required" }, { status: 422 });
+  }
+  if (!body.question || typeof body.question !== "string") {
+    return NextResponse.json({ error: "question is required" }, { status: 422 });
+  }
+
+  const connection = await getOrgConnection({
+    orgId,
+    connectionId: body.connectionId,
+    includeConfig: true,
+  });
+  if (!connection || !("config" in connection) || !connection.config) {
+    return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+  }
+
+  const configResult = sqlConnectionConfigSchema.safeParse(connection.config);
+  if (!configResult.success) {
+    return NextResponse.json(
+      { error: "Stored connection configuration is invalid" },
+      { status: 500 }
+    );
+  }
+
+  const tables = await listSemanticArtifacts({
+    orgId,
+    connectionId: body.connectionId,
+    artifactType: "table",
+  });
+  if (!tables || tables.length === 0) {
+    return NextResponse.json(
+      { error: "No semantic catalog found. Run a semantic sync first." },
+      { status: 409 }
+    );
+  }
+
+  const relevantTables = selectRelevantTables(body.question, tables);
+  const prompt = buildPrompt(body.question, relevantTables);
+
+  const client = getOpenAIClient();
+  const response = await client.responses.create({
+    model: DEFAULT_ANALYST_MODEL,
+    input: [
+      {
+        role: "system",
+        content:
+          "You are an expert data analyst generating Microsoft SQL Server queries. Only use provided tables and columns. Return JSON only.",
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "analysis_response",
+        schema: RESPONSE_SCHEMA,
+      },
+    },
+  });
+
+  const parsed = extractStructuredResponse(response);
+  if (!parsed) {
+    return NextResponse.json(
+      { error: "Model response could not be parsed" },
+      { status: 502 }
+    );
+  }
+
+  const sql = parsed.sql.trim();
+  const maxRows = Math.min(Math.max(body.maxRows ?? 5000, 1), 20000);
+
+  try {
+    const start = Date.now();
+    const queryResult = await withSqlPool(configResult.data, (pool) =>
+      executeReadOnlyQuery(pool, sql, {}, { maxRows })
+    );
+    const durationMs = Date.now() - start;
+
+    await recordQueryAudit({
+      orgId,
+      connectionId: body.connectionId,
+      userId,
+      question: body.question,
+      sql,
+      rowCount: queryResult.recordset.length,
+      durationMs,
+      status: "success",
+    });
+
+    return NextResponse.json({
+      success: true,
+      sql,
+      rationale: parsed.rationale,
+      chart: parsed.chart ?? null,
+      followUpQuestions: parsed.follow_up_questions ?? [],
+      rows: queryResult.recordset,
+      rowCount: queryResult.recordset.length,
+      columns:
+        queryResult.recordset.length > 0
+          ? Object.keys(queryResult.recordset[0])
+          : [],
+      executionMs: durationMs,
+    });
+  } catch (error) {
+    await recordQueryAudit({
+      orgId,
+      connectionId: body.connectionId,
+      userId,
+      question: body.question,
+      sql,
+      rowCount: 0,
+      durationMs: 0,
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    return NextResponse.json(
+      {
+        error: "Query execution failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+        sql,
+      },
+      { status: 502 }
+    );
+  }
+}
+
+type TableArtifact = {
+  artifactKey: string;
+  payload: {
+    schema: string;
+    name: string;
+    rowCount: number | null;
+    description?: string | null;
+    businessQuestions?: string[];
+    columns: Array<{
+      name: string;
+      dataType: string;
+      sampleValues?: string[];
+    }>;
+  };
+};
+
+function selectRelevantTables(question: string, tables: TableArtifact[]): TableArtifact[] {
+  const terms = question
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2);
+  const scores = tables.map((table) => {
+    const content = [
+      table.artifactKey,
+      table.payload.description ?? "",
+      ...(table.payload.businessQuestions ?? []),
+      ...table.payload.columns.map((column) => column.name),
+    ]
+      .join(" ")
+      .toLowerCase();
+    const score = terms.reduce(
+      (acc, term) => acc + (content.includes(term) ? 1 : 0),
+      0
+    );
+    return { table, score };
+  });
+  return scores
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map((entry) => entry.table);
+}
+
+function buildPrompt(question: string, tables: TableArtifact[]): string {
+  const tableText = tables
+    .map((table) => {
+      const columns = table.payload.columns
+        .map(
+          (column) =>
+            `- ${column.name} (${column.dataType})` +
+            (column.sampleValues?.length
+              ? ` e.g. ${column.sampleValues.slice(0, 3).join(", ")}`
+              : "")
+        )
+        .join("\n");
+      return `Table ${table.artifactKey}
+Description: ${table.payload.description ?? ""}
+Approximate rows: ${table.payload.rowCount ?? "unknown"}
+Columns:
+${columns}`;
+    })
+    .join("\n\n");
+
+  return `Question: ${question}
+
+Available tables:
+${tableText}
+
+Return JSON with keys sql, rationale, optional chart, and follow_up_questions.`;
+}
+
+function extractStructuredResponse(response: any) {
+  if (typeof response?.output_text === "string") {
+    try {
+      return JSON.parse(response.output_text);
+    } catch (error) {
+      console.warn("Failed to parse structured response", error);
+    }
+  }
+  if (Array.isArray(response?.output)) {
+    for (const item of response.output) {
+      if (item?.type === "message" && Array.isArray(item.content)) {
+        for (const content of item.content) {
+          if (content?.type === "output_text" && typeof content.text === "string") {
+            try {
+              return JSON.parse(content.text);
+            } catch (error) {
+              console.warn("Failed to parse output_text item", error);
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}

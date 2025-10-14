@@ -1,0 +1,20 @@
+[Unit]
+Description=Leo Analytics Next.js App
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/leo
+Environment=NODE_ENV=production
+Environment=PORT=8080
+EnvironmentFile=/etc/leo.env
+ExecStart=/usr/bin/env NODE_ENV=production PORT=8080 /usr/bin/npm run start
+Restart=always
+RestartSec=10
+User=www-data
+Group=www-data
+StandardOutput=append:/var/log/leo-app.log
+StandardError=append:/var/log/leo-app-error.log
+
+[Install]
+WantedBy=multi-user.target
