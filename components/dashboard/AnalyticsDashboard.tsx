@@ -59,6 +59,11 @@ export function AnalyticsDashboard() {
   const [asking, setAsking] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dashboards, setDashboards] = useState<Array<{ _id: string; name: string }>>([]);
+  const [saveTitle, setSaveTitle] = useState("");
+  const [saveDashboardId, setSaveDashboardId] = useState<string>("");
+  const [saveNewDashboard, setSaveNewDashboard] = useState<string>("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     fetchConnections();
@@ -170,6 +175,49 @@ export function AnalyticsDashboard() {
       setError(err instanceof Error ? err.message : "Query failed");
     } finally {
       setAsking(false);
+    }
+  }
+
+  async function loadDashboards() {
+    try {
+      const res = await fetch("/api/dashboards", { method: "GET" });
+      if (res.ok) {
+        const data = await res.json();
+        setDashboards(data.dashboards ?? []);
+      }
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (result) loadDashboards();
+  }, [result]);
+
+  async function handleSaveTile() {
+    if (!result) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/dashboards/save-tile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dashboardId: saveDashboardId || undefined,
+          newDashboardName: !saveDashboardId ? saveNewDashboard : undefined,
+          title: saveTitle || "Insight",
+          sql: result.sql,
+          chartSpec: result.chart ?? { type: "table" },
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "Failed to save tile");
+      }
+      setSaveTitle("");
+      setSaveDashboardId("");
+      setSaveNewDashboard("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save tile");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -374,6 +422,41 @@ export function AnalyticsDashboard() {
                   </ul>
                 </div>
               )}
+
+              <div className="rounded-md border border-border/50 bg-muted/40 p-3">
+                <p className="mb-2 text-sm font-medium">Save to dashboard</p>
+                <div className="grid gap-2 md:grid-cols-3">
+                  <div>
+                    <Label htmlFor="dash">Existing dashboard</Label>
+                    <select
+                      id="dash"
+                      className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm"
+                      value={saveDashboardId}
+                      onChange={(e) => setSaveDashboardId(e.target.value)}
+                    >
+                      <option value="">(create new)</option>
+                      {dashboards.map((d) => (
+                        <option key={d._id} value={d._id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {!saveDashboardId && (
+                    <div>
+                      <Label htmlFor="newdash">New dashboard name</Label>
+                      <Input id="newdash" value={saveNewDashboard} onChange={(e) => setSaveNewDashboard(e.target.value)} placeholder="e.g. Sales Overview" />
+                    </div>
+                  )}
+                  <div>
+                    <Label htmlFor="title">Tile title</Label>
+                    <Input id="title" value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)} placeholder="Insight title" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Button onClick={handleSaveTile} disabled={saving}>
+                    {saving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

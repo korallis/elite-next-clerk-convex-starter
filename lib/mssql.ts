@@ -83,7 +83,7 @@ export async function executeReadOnlyQuery(
   return request.query(sanitizedQuery);
 }
 
-function enforceReadOnly(query: string): string {
+export function enforceReadOnly(query: string): string {
   const trimmed = query.trim();
   if (!trimmed) {
     throw new Error("Query is required");

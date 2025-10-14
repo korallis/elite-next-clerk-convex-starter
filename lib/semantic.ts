@@ -15,8 +15,8 @@ import {
 } from "./openai";
 import { upsertVectors } from "./vectorStore";
 
-const SAMPLE_COLUMN_LIMIT = 4;
-const SAMPLE_VALUE_LIMIT = 5;
+const SAMPLE_COLUMN_LIMIT = parseInt(process.env.SEMANTIC_SAMPLE_COLUMNS || "4", 10);
+const SAMPLE_VALUE_LIMIT = parseInt(process.env.SEMANTIC_SAMPLE_VALUES || "5", 10);
 
 export type ColumnProfile = {
   name: string;
@@ -170,7 +170,7 @@ async function sampleColumnValues(
   return samples;
 }
 
-function shouldSampleColumn(column: ColumnMetadata): boolean {
+export function shouldSampleColumn(column: ColumnMetadata): boolean {
   const textTypes = new Set([
     "nvarchar",
     "varchar",
