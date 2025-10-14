@@ -68,3 +68,13 @@ export const getTiles = query({
     return tiles.filter((t) => t.orgId === args.orgId).sort((a, b) => a.order - b.order);
   },
 });
+
+export const deleteTile = mutation({
+  args: { adminToken: v.string(), orgId: v.string(), tileId: v.id("dashboardTiles") },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    const tile = await ctx.db.get(args.tileId);
+    if (!tile || tile.orgId !== args.orgId) throw new Error("Not found");
+    await ctx.db.delete(args.tileId);
+  },
+});

@@ -387,11 +387,11 @@ async function embedAndStore(orgId: string, items: EmbeddingItem[]) {
   }
 }
 
-function quoteIdentifier(identifier: string): string {
+export function quoteIdentifier(identifier: string): string {
   const escaped = identifier.replace(/]/g, "]]" );
   return `[${escaped}]`;
 }
 
-function formatTableName(schema: string, table: string): string {
+export function formatTableName(schema: string, table: string): string {
   return `${quoteIdentifier(schema)}.${quoteIdentifier(table)}`;
 }
