@@ -16,10 +16,10 @@ import { useTheme } from "next-themes"
 
 
 const menuItems = [
-    { name: 'Features', href: '#link' },
-    { name: 'Solution', href: '#link' },
-    { name: 'Pricing', href: '#link' },
-    { name: 'About', href: '#link' },
+    { name: 'Features', href: '/#features' },
+    { name: 'Data Map', href: '/data-map' },
+    { name: 'Dashboards', href: '/dashboards' },
+    { name: 'Pricing', href: '/#pricing' },
 ]
 
 export const HeroHeader = () => {
@@ -51,8 +51,8 @@ export const HeroHeader = () => {
                                 aria-label="home"
                                 className="flex items-center space-x-2">
                                 <ChatMaxingIconColoured />
-                                <span className="text-xl font-medium">Starter.diy</span>
-                                <Badge variant="outline" className="text-muted-foreground  text-xs">Demo</Badge>
+                                <span className="text-xl font-medium">Leo AI Analytics</span>
+                                <Badge variant="outline" className="text-muted-foreground  text-xs">Beta</Badge>
                             </Link>
 
                             <button
@@ -114,7 +114,7 @@ export const HeroHeader = () => {
                                             variant="outline"
                                             size="sm"
                                             className={cn(isScrolled && 'lg:hidden')}>
-                                            <Link href="#">
+                                            <Link href="/sign-in">
                                                 <span>Login</span>
                                             </Link>
                                         </Button>
@@ -124,7 +124,7 @@ export const HeroHeader = () => {
                                             asChild
                                             size="sm"
                                             className={cn(isScrolled && 'lg:hidden')}>
-                                            <Link href="#">
+                                            <Link href="/sign-up">
                                                 <span>Sign Up</span>
                                             </Link>
                                         </Button>
@@ -134,7 +134,7 @@ export const HeroHeader = () => {
                                             asChild
                                             size="sm"
                                             className={cn(isScrolled ? 'lg:inline-flex' : 'hidden')}>
-                                            <Link href="#">
+                                            <Link href="/sign-up">
                                                 <span>Get Started</span>
                                             </Link>
                                         </Button>

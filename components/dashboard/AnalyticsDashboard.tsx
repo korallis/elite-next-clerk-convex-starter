@@ -280,6 +280,11 @@ export function AnalyticsDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {connections.length === 0 && (
+            <div className="mb-4 rounded-md border border-dashed border-border/50 bg-muted/40 p-4 text-sm text-muted-foreground">
+              No data sources yet. Add your first connection below to get started.
+            </div>
+          )}
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleCreateConnection}>
             <div className="space-y-2">
               <Label htmlFor="server">Server</Label>
@@ -376,6 +381,11 @@ export function AnalyticsDashboard() {
               {syncing ? "Syncing..." : "Run Semantic Sync"}
             </Button>
           </div>
+          {!selectedConnection && connections.length > 0 && (
+            <div className="rounded-md border border-dashed border-border/50 bg-muted/40 p-4 text-sm text-muted-foreground">
+              Select a connection to continue.
+            </div>
+          )}
           {selectedConnection && (
             <div className="rounded-md border border-border/60 bg-muted/40 p-4 text-sm">
               <p className="font-medium">Status</p>
@@ -415,6 +425,11 @@ export function AnalyticsDashboard() {
           <Button onClick={handleAsk} disabled={asking || !selectedConnectionId || !question.trim()}>
             {asking ? "Thinking..." : "Generate insight"}
           </Button>
+          {!result && (
+            <div className="rounded-md border border-dashed border-border/50 bg-muted/40 p-4 text-sm text-muted-foreground">
+              Ask a question to see results here.
+            </div>
+          )}
           {result && (
             <div className="space-y-4">
               <div>

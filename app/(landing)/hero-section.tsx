@@ -15,7 +15,7 @@ export default function HeroSection() {
                         <div className="relative z-10 mx-auto max-w-5xl px-6 text-center">
                             <div>
                                 <Link
-                                    href="#"
+                                    href="/dashboard"
                                     className="hover:bg-foreground/5 mx-auto flex w-fit items-center justify-center gap-2 rounded-md py-0.5 pl-1 pr-3 transition-colors duration-150">
                                     <div
                                         aria-hidden
@@ -24,25 +24,25 @@ export default function HeroSection() {
                                         <div className="absolute inset-x-1.5 inset-y-0 border-x border-dotted border-white/25"></div>
                                         <Sparkle className="size-3 fill-background stroke-background drop-shadow" />
                                     </div>
-                                    <span className="font-medium">Introducing AI Agents</span>
+                                    <span className="font-medium">AI‑Driven Analytics for MS SQL</span>
                                 </Link>
-                                <h1 className="mx-auto mt-8 max-w-3xl text-balance text-4xl font-bold tracking-tight sm:text-5xl">Build 10x Faster with Starter</h1>
-                                <p className="text-muted-foreground mx-auto my-6 max-w-xl text-balance text-xl">Craft. Build. Ship Modern Websites With AI Support.</p>
+                                <h1 className="mx-auto mt-8 max-w-3xl text-balance text-4xl font-bold tracking-tight sm:text-5xl">Ask your data. Get instant dashboards.</h1>
+                                <p className="text-muted-foreground mx-auto my-6 max-w-xl text-balance text-xl">Connect Microsoft SQL Server, build a semantic model, and let AI do the analysis—securely, in your org.</p>
 
                                 <div className="flex items-center justify-center gap-3">
                                     <Button
                                         asChild
                                         size="lg">
-                                        <Link href="#link">
-                                            <span className="text-nowrap">Start Building</span>
+                                        <Link href="/dashboard">
+                                            <span className="text-nowrap">Open Dashboard</span>
                                         </Link>
                                     </Button>
                                     <Button
                                         asChild
                                         size="lg"
                                         variant="outline">
-                                        <Link href="#link">
-                                            <span className="text-nowrap">Watch Video</span>
+                                        <Link href="/data-map">
+                                            <span className="text-nowrap">Explore Data Map</span>
                                         </Link>
                                     </Button>
                                 </div>
