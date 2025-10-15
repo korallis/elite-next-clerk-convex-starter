@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       adminToken: process.env.CONVEX_ADMIN_TOKEN!,
       orgId,
       dashboardId,
+      connectionId: body.connectionId as any,
       title: tile.title,
       sql: tile.sql,
       chartSpecJson: JSON.stringify(tile.chart ?? { type: "table" }),

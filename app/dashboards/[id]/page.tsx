@@ -54,7 +54,7 @@ export default function DashboardPage({ params }: { params: { id: string } }) {
                 </button>
               )}
               <h3 className="mb-2 text-sm font-semibold">{tile.title}</h3>
-              <ChartRenderer spec={spec} rows={[]} />
+              <TileData tileId={tile._id} spec={spec} />
               <pre className="mt-2 line-clamp-3 whitespace-pre-wrap break-all text-xs text-muted-foreground">
                 {tile.sql}
               </pre>
@@ -68,4 +68,22 @@ export default function DashboardPage({ params }: { params: { id: string } }) {
 
 function safeParse(text: string) {
   try { return JSON.parse(text); } catch { return { type: "table" }; }
+}
+
+function TileData({ tileId, spec }: { tileId: string; spec: any }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/dashboards/tiles/${tileId}/data`).then(async (r) => {
+      if (!alive) return;
+      if (!r.ok) { setLoading(false); return; }
+      const data = await r.json();
+      setRows(data.rows ?? []);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [tileId]);
+  if (loading) return <div className="h-[320px] w-full text-xs text-muted-foreground">Loading…</div>;
+  return <ChartRenderer spec={spec} rows={rows} />;
 }

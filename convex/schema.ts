@@ -88,6 +88,7 @@ export default defineSchema({
     dashboardTiles: defineTable({
       orgId: v.string(),
       dashboardId: v.id("dashboards"),
+      connectionId: v.optional(v.id("orgConnections")),
       title: v.string(),
       sql: v.string(),
       chartSpec: v.string(),

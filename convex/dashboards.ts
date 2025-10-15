@@ -36,6 +36,7 @@ export const addTile = mutation({
     adminToken: v.string(),
     orgId: v.string(),
     dashboardId: v.id("dashboards"),
+    connectionId: v.optional(v.id("orgConnections")),
     title: v.string(),
     sql: v.string(),
     chartSpecJson: v.string(),
@@ -47,6 +48,7 @@ export const addTile = mutation({
     await ctx.db.insert("dashboardTiles", {
       orgId: args.orgId,
       dashboardId: args.dashboardId,
+      connectionId: args.connectionId,
       title: args.title,
       sql: args.sql,
       chartSpec: args.chartSpecJson,

@@ -64,6 +64,7 @@ export function AnalyticsDashboard() {
   const [saveDashboardId, setSaveDashboardId] = useState<string>("");
   const [saveNewDashboard, setSaveNewDashboard] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  const [streaming, setStreaming] = useState(false);
 
   useEffect(() => {
     fetchConnections();
@@ -155,21 +156,60 @@ export function AnalyticsDashboard() {
     if (!selectedConnectionId || !question.trim()) return;
     setAsking(true);
     setError(null);
+    setResult(null);
     try {
-      const response = await fetch("/api/ai/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          connectionId: selectedConnectionId,
-          question: question.trim(),
-        }),
-      });
-      if (!response.ok) {
+      if (!streaming) {
+        const response = await fetch("/api/ai/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionId: selectedConnectionId, question: question.trim() }),
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error ?? "Query failed");
+        }
         const data = await response.json();
-        throw new Error(data.error ?? "Query failed");
+        setResult(data);
+      } else {
+        const res = await fetch("/api/ai/query/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ connectionId: selectedConnectionId, question: question.trim() }),
+        });
+        if (!res.ok || !res.body) throw new Error("Stream failed");
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          for (const chunk of parts) {
+            const lines = chunk.split("\n");
+            const event = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
+            const dataLine = lines.find((l) => l.startsWith("data:"))?.slice(5).trim();
+            if (!event || !dataLine) continue;
+            try {
+              const data = JSON.parse(dataLine);
+              if (event === "draft") {
+                setResult((prev) => ({
+                  sql: data.sql,
+                  rationale: data.rationale,
+                  chart: data.chart ?? null,
+                  followUpQuestions: [],
+                  rows: [],
+                  columns: [],
+                  executionMs: 0,
+                } as any));
+              } else if (event === "result") {
+                setResult((prev: any) => prev ? ({ ...prev, rows: data.rows, columns: data.columns }) : null);
+              }
+            } catch {}
+          }
+        }
       }
-      const data = await response.json();
-      setResult(data);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Query failed");
@@ -356,7 +396,7 @@ export function AnalyticsDashboard() {
           <CardDescription>Natural language questions generate SQL automatically.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
+              <div className="space-y-2">
             <Label htmlFor="question">Question</Label>
             <textarea
               id="question"
@@ -366,6 +406,12 @@ export function AnalyticsDashboard() {
               placeholder="e.g. Show total revenue per month for the last 12 months"
             />
           </div>
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input type="checkbox" checked={streaming} onChange={(e) => setStreaming(e.target.checked)} />
+                  Stream
+                </label>
+              </div>
           <Button onClick={handleAsk} disabled={asking || !selectedConnectionId || !question.trim()}>
             {asking ? "Thinking..." : "Generate insight"}
           </Button>
@@ -426,6 +472,19 @@ export function AnalyticsDashboard() {
               <div className="rounded-md border border-border/50 bg-muted/40 p-3">
                 <p className="mb-2 text-sm font-medium">Save to dashboard</p>
                 <div className="grid gap-2 md:grid-cols-3">
+                  <div>
+                    <Label htmlFor="save-conn">Connection</Label>
+                    <select
+                      id="save-conn"
+                      className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm"
+                      value={selectedConnectionId ?? ""}
+                      onChange={(e) => setSelectedConnectionId(e.target.value)}
+                    >
+                      {connections.map((connection) => (
+                        <option key={connection._id} value={connection._id}>{connection.name}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <Label htmlFor="dash">Existing dashboard</Label>
                     <select

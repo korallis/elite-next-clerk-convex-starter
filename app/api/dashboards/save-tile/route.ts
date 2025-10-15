@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 type Body = {
   dashboardId?: string;
   newDashboardName?: string;
+  connectionId?: string;
   title: string;
   sql: string;
   chartSpec: unknown;
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
     adminToken: process.env.CONVEX_ADMIN_TOKEN!,
     orgId,
     dashboardId,
+    connectionId: (body.connectionId as any) ?? undefined,
     title: body.title,
     sql: body.sql,
     chartSpecJson: JSON.stringify(body.chartSpec ?? { type: "table" }),

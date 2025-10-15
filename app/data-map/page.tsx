@@ -55,6 +55,7 @@ export default function DataMapPage() {
             <CardContent>
               <p className="mb-2 text-xs text-muted-foreground">{t.payload.description ?? ""}</p>
               <p className="text-xs">Rows: {t.payload.rowCount ?? "unknown"}</p>
+              <p className="text-xs text-muted-foreground">Updated: {formatUpdated(t)}</p>
               <div className="mt-2 text-xs">
                 <p className="font-medium">Columns</p>
                 <ul className="mt-1 max-h-40 list-disc space-y-1 overflow-auto pl-4">
@@ -65,10 +66,24 @@ export default function DataMapPage() {
                   ))}
                 </ul>
               </div>
+              {Array.isArray(t.payload.foreignKeys) && t.payload.foreignKeys.length > 0 && (
+                <div className="mt-3 text-xs">
+                  <p className="font-medium">Joins</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4">
+                    {t.payload.foreignKeys.slice(0, 20).map((fk: any, idx: number) => (
+                      <li key={idx}>{fk.sourceColumn} → {fk.targetTable}.{fk.targetColumn}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}
       </div>
     </div>
   );
+}
+
+function formatUpdated(a: any) {
+  return a.updatedAt ? new Date(a.updatedAt).toLocaleString() : "unknown";
 }
