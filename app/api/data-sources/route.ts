@@ -6,6 +6,7 @@ import {
   listOrgConnections,
   recordConnectionVerification,
 } from "@/lib/convexServerClient";
+import { encryptJson } from "@/lib/encryption";
 
 type CreateConnectionBody = {
   name: string;
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
   const connectionId = await createOrgConnection({
     orgId,
     name: body.name,
-    configJson: JSON.stringify(parseResult.data),
+    encryptedConfig: encryptJson(parseResult.data),
     createdBy: userId,
   });
 

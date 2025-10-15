@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { connectionConfigSchema, type ConnectionConfig } from "./validators/connection";
-import { encryptJson, decryptJson } from "./utils/encryption";
 import { assertAdminToken } from "./utils/adminAuth";
 
 export const list = query({
@@ -21,7 +20,7 @@ export const get = query({
     adminToken: v.string(),
     orgId: v.string(),
     connectionId: v.id("orgConnections"),
-    includeConfig: v.optional(v.boolean()),
+    includeEncrypted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     assertAdminToken(ctx, args.adminToken);
@@ -29,12 +28,11 @@ export const get = query({
     if (!doc || doc.orgId !== args.orgId) {
       return null;
     }
-    const { encryptedConfig: encrypted, ...rest } = doc;
-    if (!args.includeConfig) {
-      return rest;
+    const { encryptedConfig, ...rest } = doc;
+    if (args.includeEncrypted) {
+      return { ...rest, encryptedConfig };
     }
-    const config = decryptJson<ConnectionConfig>(encrypted);
-    return { ...rest, config };
+    return rest;
   },
 });
 
@@ -44,7 +42,12 @@ export const create = mutation({
     orgId: v.string(),
     name: v.string(),
     driver: v.literal("mssql"),
-    configJson: v.string(),
+    encryptedConfig: v.object({
+      algorithm: v.string(),
+      iv: v.string(),
+      ciphertext: v.string(),
+      tag: v.string(),
+    }),
     createdBy: v.string(),
   },
   handler: async (ctx, args) => {
@@ -56,14 +59,11 @@ export const create = mutation({
     if (existing) {
       throw new Error("A data source with this name already exists");
     }
-
-    const parsedConfig = connectionConfigSchema.parse(JSON.parse(args.configJson));
-    const encryptedConfig = encryptJson(parsedConfig);
     const connectionId = await ctx.db.insert("orgConnections", {
       orgId: args.orgId,
       name: args.name,
       driver: args.driver,
-      encryptedConfig,
+      encryptedConfig: args.encryptedConfig,
       createdBy: args.createdBy,
       createdAt: Date.now(),
       updatedAt: Date.now(),

@@ -1,5 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { decryptJson } from "@/lib/encryption";
+import type { ConnectionConfig } from "@/convex/validators/connection";
 
 let convexClient: ConvexHttpClient | null = null;
 
@@ -29,7 +31,7 @@ export function getConvexClient(): ConvexHttpClient {
 export async function createOrgConnection(args: {
   orgId: string;
   name: string;
-  configJson: string;
+  encryptedConfig: { algorithm: string; iv: string; ciphertext: string; tag: string };
   createdBy: string;
 }): Promise<string> {
   const client = getConvexClient();
@@ -39,7 +41,7 @@ export async function createOrgConnection(args: {
     orgId: args.orgId,
     name: args.name,
     driver: "mssql",
-    configJson: args.configJson,
+    encryptedConfig: args.encryptedConfig as any,
     createdBy: args.createdBy,
   });
   return (result as any).id ?? (result as unknown as string);
@@ -52,12 +54,18 @@ export async function getOrgConnection(args: {
 }) {
   const client = getConvexClient();
   const adminToken = getConvexAdminToken();
-  return client.query(api.orgConnections.get, {
+  const doc = await client.query(api.orgConnections.get, {
     adminToken,
     orgId: args.orgId,
     connectionId: args.connectionId as never,
-    includeConfig: args.includeConfig ?? false,
+    includeEncrypted: args.includeConfig ?? false,
   });
+  if (!doc) return null as any;
+  if (!args.includeConfig) return doc as any;
+  const encrypted = (doc as any).encryptedConfig;
+  const config = decryptJson<ConnectionConfig>(encrypted);
+  const { encryptedConfig: _drop, ...rest } = doc as any;
+  return { ...rest, config };
 }
 
 export async function listOrgConnections(orgId: string) {
