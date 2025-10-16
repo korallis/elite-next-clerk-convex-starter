@@ -85,3 +85,18 @@ export const lastForQuestion = query({
     return { createdAt: latest.createdAt, rowCount: latest.rowCount, durationMs: latest.durationMs, status: latest.status };
   },
 });
+
+export const listByOrg = query({
+  args: {
+    adminToken: v.string(),
+    orgId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    const docs = await ctx.db
+      .query("queryAudits")
+      .withIndex("byOrg", (q) => q.eq("orgId", args.orgId))
+      .collect();
+    return docs.sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
