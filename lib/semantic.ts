@@ -413,11 +413,12 @@ function buildEmbeddingItems(tables: TableProfile[]): EmbeddingItem[] {
           `${column.name} (${column.dataType}${column.nullable ? " nullable" : " not null"})`
       )
       .join("; ");
+    const aliases = buildAliases(table.name);
     items.push({
       key: `table:${table.key}`,
       artifactType: "table",
       artifactKey: table.key,
-      text: `Table ${table.key}. Row count: ${
+      text: `Table ${table.key} (${aliases.join(" / ")}). Row count: ${
         table.rowCount ?? "unknown"
       }. Columns: ${columnSummaries}. Description: ${table.description ?? ""}`,
       metadata: {
@@ -431,11 +432,12 @@ function buildEmbeddingItems(tables: TableProfile[]): EmbeddingItem[] {
       const sampleValuesText = column.sampleValues.length
         ? `Sample values: ${column.sampleValues.join(", ")}`
         : "";
+      const colAliases = buildAliases(column.name);
       items.push({
         key: `column:${table.key}.${column.name}`,
         artifactType: "column",
         artifactKey: `${table.key}.${column.name}`,
-        text: `Column ${column.name} in table ${table.key}. Type: ${
+        text: `Column ${column.name} (${colAliases.join(" / ")}) in table ${table.key}. Type: ${
           column.dataType
         }. ${sampleValuesText}`,
         metadata: {
@@ -449,6 +451,18 @@ function buildEmbeddingItems(tables: TableProfile[]): EmbeddingItem[] {
   }
   return items;
 }
+
+function buildAliases(name: string): string[] {
+  const snakeWords = name.replace(/^[a-z]+_/i, "").split(/[_\s]+/).filter(Boolean);
+  const joined = snakeWords.join(" ");
+  const singular = singularize(joined);
+  const plural = pluralize(joined);
+  const set = new Set([joined.toLowerCase(), singular.toLowerCase(), plural.toLowerCase()]);
+  return Array.from(set);
+}
+
+function singularize(s: string): string { return s.replace(/s\b/i, ""); }
+function pluralize(s: string): string { return /s\b/i.test(s) ? s : s + "s"; }
 
 async function embedAndStore(orgId: string, items: EmbeddingItem[]) {
   if (items.length === 0) return;
