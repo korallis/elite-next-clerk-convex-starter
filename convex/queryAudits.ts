@@ -65,3 +65,23 @@ export const countRecentErrorsByOrg = query({
     return docs.filter((d) => d.createdAt >= since && d.status === "error").length;
   },
 });
+
+export const lastForQuestion = query({
+  args: {
+    adminToken: v.string(),
+    orgId: v.string(),
+    question: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    // Use byOrgAndQuestion index for efficient lookup
+    const docs = await ctx.db
+      .query("queryAudits")
+      .withIndex("byOrgAndQuestion", (q) => q.eq("orgId", args.orgId).eq("question", args.question))
+      .collect();
+    if (docs.length === 0) return null;
+    // Return the most recent by createdAt
+    const latest = docs.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+    return { createdAt: latest.createdAt, rowCount: latest.rowCount, durationMs: latest.durationMs, status: latest.status };
+  },
+});

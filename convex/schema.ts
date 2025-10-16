@@ -31,9 +31,31 @@ export default defineSchema({
       updatedAt: v.number(),
       lastVerifiedAt: v.optional(v.number()),
       lastError: v.optional(v.string()),
+      selectedTables: v.optional(v.array(v.string())),
+      excludedTables: v.optional(v.array(v.string())),
+      selectionMode: v.optional(
+        v.union(v.literal("all"), v.literal("include"), v.literal("exclude"))
+      ),
+      syncRequestedAt: v.optional(v.number()),
     })
       .index("byOrg", ["orgId"])
       .index("byOrgAndName", ["orgId", "name"]),
+
+    orgConnectionDrafts: defineTable({
+      orgId: v.string(),
+      createdBy: v.string(),
+      name: v.optional(v.string()),
+      step: v.number(),
+      encryptedConfig: v.optional(encryptedPayloadValidator),
+      selectedTables: v.optional(v.array(v.string())),
+      selectionMode: v.optional(
+        v.union(v.literal("all"), v.literal("include"), v.literal("exclude"))
+      ),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("byOrg", ["orgId"])
+      .index("byOrgAndUser", ["orgId", "createdBy"]),
 
     semanticArtifacts: defineTable({
       orgId: v.string(),
@@ -52,14 +74,38 @@ export default defineSchema({
     semanticSyncRuns: defineTable({
       orgId: v.string(),
       connectionId: v.id("orgConnections"),
-      status: v.union(v.literal("pending"), v.literal("running"), v.literal("completed"), v.literal("failed")),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      ),
       startedAt: v.number(),
       completedAt: v.optional(v.number()),
       error: v.optional(v.string()),
+      attempts: v.optional(v.number()),
     })
       .index("byOrg", ["orgId"])
       .index("byConnection", ["connectionId"])
       .index("byStatus", ["status"]),
+
+    semanticSyncStages: defineTable({
+      runId: v.id("semanticSyncRuns"),
+      stage: v.string(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed")
+      ),
+      startedAt: v.optional(v.number()),
+      completedAt: v.optional(v.number()),
+      error: v.optional(v.string()),
+      // Store metrics as JSON string for compatibility
+      metrics: v.optional(v.string()),
+    })
+      .index("byRun", ["runId"])
+      .index("byRunStage", ["runId", "stage"]),
 
     queryAudits: defineTable({
       orgId: v.string(),
@@ -75,7 +121,8 @@ export default defineSchema({
     })
       .index("byOrg", ["orgId"])
       .index("byConnection", ["connectionId"])
-      .index("byOrgCreatedAt", ["orgId", "createdAt"]),
+      .index("byOrgCreatedAt", ["orgId", "createdAt"])
+      .index("byOrgAndQuestion", ["orgId", "question"]),
 
     dashboards: defineTable({
       orgId: v.string(),
@@ -93,9 +140,15 @@ export default defineSchema({
       sql: v.string(),
       chartSpec: v.string(),
       order: v.number(),
+      // layout metadata
+      x: v.optional(v.number()),
+      y: v.optional(v.number()),
+      w: v.optional(v.number()),
+      h: v.optional(v.number()),
       createdAt: v.number(),
       updatedAt: v.number(),
     })
       .index("byDashboard", ["dashboardId"]) 
       .index("byOrg", ["orgId"]),
+    
   });

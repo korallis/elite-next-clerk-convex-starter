@@ -80,3 +80,35 @@ export const deleteTile = mutation({
     await ctx.db.delete(args.tileId);
   },
 });
+
+export const updateTileLayout = mutation({
+  args: {
+    adminToken: v.string(),
+    orgId: v.string(),
+    updates: v.array(
+      v.object({
+        tileId: v.id("dashboardTiles"),
+        order: v.optional(v.number()),
+        w: v.optional(v.number()),
+        h: v.optional(v.number()),
+        x: v.optional(v.number()),
+        y: v.optional(v.number()),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    for (const u of args.updates) {
+      const tile = await ctx.db.get(u.tileId);
+      if (!tile || tile.orgId !== args.orgId) continue;
+      await ctx.db.patch(u.tileId, {
+        order: typeof u.order === "number" ? u.order : tile.order,
+        w: typeof u.w === "number" ? u.w : tile.w,
+        h: typeof u.h === "number" ? u.h : tile.h,
+        x: typeof u.x === "number" ? u.x : tile.x,
+        y: typeof u.y === "number" ? u.y : tile.y,
+        updatedAt: Date.now(),
+      });
+    }
+  },
+});
