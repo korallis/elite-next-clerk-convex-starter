@@ -13,9 +13,12 @@ type Body = {
 };
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId, orgRole } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!orgId) return NextResponse.json({ error: "Organization is required" }, { status: 400 });
+  if (typeof orgRole === "string" && orgRole.toLowerCase() === "viewer") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const body = (await request.json()) as Body;
   if (!body?.title || !body?.sql) return NextResponse.json({ error: "title and sql required" }, { status: 422 });
 

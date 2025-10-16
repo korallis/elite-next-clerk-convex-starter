@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getConvexClient, listOrgConnections } from "@/lib/convexServerClient";
 import { api } from "@/convex/_generated/api";
 import { sqlConnectionConfigSchema, withSqlPool, executeReadOnlyQuery } from "@/lib/mssql";
+import crypto from "crypto";
 import { getOrgConnection } from "@/lib/convexServerClient";
 
 export async function GET(request: Request, ctx: { params: Promise<{ tileId: string }> }) {
@@ -40,7 +41,23 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
   if (endDate) params["end_date"] = new Date(endDate);
   if (dimension) params["dimension"] = dimension;
 
-  const start = Date.now();
+  // Simple in-process cache keyed by tile+params for limited TTL
+  const ttlMs = parseInt(process.env.NEXT_PUBLIC_DASH_CACHE_TTL_MS || "300000", 10); // default 5m
+  const cacheKey = (() => {
+    const key = JSON.stringify({ tileId, startDate, endDate, dimension });
+    return crypto.createHash("sha256").update(key).digest("hex");
+  })();
+  const now = Date.now();
+  // @ts-ignore augment module-local cache
+  global.__TILE_CACHE__ = global.__TILE_CACHE__ || new Map<string, { ts: number; payload: any }>();
+  // @ts-ignore
+  const cache: Map<string, { ts: number; payload: any }> = global.__TILE_CACHE__;
+  const hit = cache.get(cacheKey);
+  if (hit && now - hit.ts < ttlMs) {
+    return NextResponse.json(hit.payload);
+  }
+
+  const start = now;
   try {
     const result = await withSqlPool(cfg, (pool) => executeReadOnlyQuery(pool, tile.sql, params, { maxRows: 5000 }));
     const durationMs = Date.now() - start;
@@ -56,12 +73,14 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
       durationMs,
       status: "success",
     });
-    return NextResponse.json({
+    const payload = {
       rows: result.recordset,
       columns: result.recordset.length
         ? Object.keys(result.recordset[0] as Record<string, unknown>)
         : [],
-    });
+    };
+    cache.set(cacheKey, { ts: Date.now(), payload });
+    return NextResponse.json(payload);
   } catch (error) {
     await convex.mutation(api.queryAudits.record, {
       adminToken: process.env.CONVEX_ADMIN_TOKEN!,

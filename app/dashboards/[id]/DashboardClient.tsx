@@ -47,8 +47,25 @@ export function DashboardClient({ id }: DashboardClientProps) {
   }
 
   useEffect(() => {
+    // Initialize filters from URL params
+    try {
+      const url = new URL(window.location.href);
+      const startDate = url.searchParams.get("startDate") || "";
+      const endDate = url.searchParams.get("endDate") || "";
+      const dimension = url.searchParams.get("dimension") || "";
+      setFilters({ startDate, endDate, dimension });
+    } catch {}
     load();
   }, [id]);
+
+  // Keep filters in the URL for shareability
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (filters.startDate) url.searchParams.set("startDate", filters.startDate); else url.searchParams.delete("startDate");
+    if (filters.endDate) url.searchParams.set("endDate", filters.endDate); else url.searchParams.delete("endDate");
+    if (filters.dimension) url.searchParams.set("dimension", filters.dimension); else url.searchParams.delete("dimension");
+    window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
+  }, [filters.startDate, filters.endDate, filters.dimension]);
 
   async function deleteTile(tileId: string) {
     await fetch(`/api/dashboards/tiles/${tileId}/delete`, { method: "POST" });
@@ -115,7 +132,10 @@ export function DashboardClient({ id }: DashboardClientProps) {
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground">Share link</label>
-                <input className="mt-1 w-full rounded-md border border-border bg-muted/40 p-2 text-xs" readOnly value={typeof window !== 'undefined' ? window.location.href : ''} />
+                <div className="mt-1 flex items-center gap-2">
+                  <input className="w-full rounded-md border border-border bg-muted/40 p-2 text-xs" readOnly value={typeof window !== 'undefined' ? window.location.href : ''} />
+                  <Button size="sm" onClick={() => { navigator.clipboard?.writeText(window.location.href); }}>Copy</Button>
+                </div>
               </div>
             </div>
           </div>
