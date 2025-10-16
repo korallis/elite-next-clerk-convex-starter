@@ -15,6 +15,7 @@ import {
   getOrgSettings,
 } from "@/lib/convexServerClient";
 import { rankTablesFromHits } from "@/lib/retrieval";
+import { listSemanticCatalog } from "@/lib/convexServerClient";
 
 type QueryBody = {
   connectionId: string;
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const relevantTables = await selectRelevantTables(orgId, body.question, tables);
+  const relevantTables = await selectRelevantTables(orgId, body.question, tables, body.connectionId);
   const prompt = buildPrompt(body.question, relevantTables);
 
   const client = getOpenAIClient();
@@ -237,7 +238,22 @@ type TableArtifact = {
   };
 };
 
-async function selectRelevantTables(orgId: string, question: string, tables: TableArtifact[]): Promise<TableArtifact[]> {
+async function selectRelevantTables(orgId: string, question: string, tables: TableArtifact[], connectionId: string): Promise<TableArtifact[]> {
+  // 1) Prefer explicit entity/attribute mapping when question matches an entity name from Catalog v2
+  try {
+    const catalog = await listSemanticCatalog({ orgId, connectionId });
+    const q = question.toLowerCase();
+    const entity = (catalog?.entities || []).find((e: any) => {
+      const name = String(e.name || "").toLowerCase();
+      const syns: string[] = Array.isArray(e.synonyms) ? e.synonyms.map((s: any) => String(s).toLowerCase()) : [];
+      return q.includes(name) || syns.some((s) => q.includes(s));
+    });
+    if (entity && entity.defaultTable) {
+      const hit = tables.find((t) => t.artifactKey.toLowerCase() === String(entity.defaultTable).toLowerCase());
+      if (hit) return [hit, ...tables.filter((t) => t !== hit)].slice(0, 5);
+    }
+  } catch {}
+
   try {
     const client = getOpenAIClient();
     const embedding = await client.embeddings.create({ model: DEFAULT_EMBEDDING_MODEL, input: question });

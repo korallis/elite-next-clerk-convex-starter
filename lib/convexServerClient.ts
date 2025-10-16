@@ -306,6 +306,37 @@ export async function listSemanticArtifacts(args: {
   });
 }
 
+// Semantic Catalog v2 helpers
+export async function listSemanticCatalog(args: { orgId: string; connectionId: string }) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  // Using any-cast because generated types are generic any in this repo
+  return client.query((api as any).semanticCatalog.listCatalog, {
+    adminToken,
+    orgId: args.orgId,
+    connectionId: args.connectionId as never,
+  });
+}
+
+export async function upsertSemanticOverride(args: {
+  orgId: string;
+  connectionId: string;
+  kind: string; // boost|ban|synonym|join
+  target: string; // e.g. table:schema.table
+  payload?: unknown;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  await client.mutation((api as any).semanticCatalog.upsertOverride, {
+    adminToken,
+    orgId: args.orgId,
+    connectionId: args.connectionId as never,
+    kind: args.kind,
+    target: args.target,
+    payloadJson: args.payload ? JSON.stringify(args.payload) : undefined,
+  });
+}
+
 export async function recordQueryAudit(args: {
   orgId: string;
   connectionId: string;
