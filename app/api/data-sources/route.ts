@@ -5,16 +5,22 @@ import {
   createOrgConnection,
   listOrgConnections,
   recordConnectionVerification,
+  removeConnectionDraft,
 } from "@/lib/convexServerClient";
 import { encryptJson } from "@/lib/encryption";
+import { normalizeTableSelection } from "@/lib/dataSources";
 
 type CreateConnectionBody = {
   name: string;
   config: unknown;
+  draftId?: string;
+  selectionMode?: "all" | "include" | "exclude";
+  selectedTables?: unknown;
+  excludedTables?: unknown;
 };
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -50,11 +56,20 @@ export async function POST(request: Request) {
     );
   }
 
+  const selection = normalizeTableSelection(
+    body.selectionMode,
+    body.selectedTables,
+    body.excludedTables
+  );
+
   const connectionId = await createOrgConnection({
     orgId,
     name: body.name,
     encryptedConfig: encryptJson(parseResult.data),
     createdBy: userId,
+    selectedTables: selection.selectedTables,
+    excludedTables: selection.excludedTables,
+    selectionMode: selection.mode,
   });
 
   await recordConnectionVerification({
@@ -64,6 +79,14 @@ export async function POST(request: Request) {
     lastError: undefined,
   });
 
+  if (body.draftId) {
+    await removeConnectionDraft({
+      orgId,
+      userId,
+      draftId: body.draftId,
+    });
+  }
+
   return NextResponse.json({
     success: true,
     connectionId,
@@ -71,7 +94,7 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -89,3 +112,4 @@ function normalizeError(error: unknown) {
   }
   return "Unexpected error";
 }
+

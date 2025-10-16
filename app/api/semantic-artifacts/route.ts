@@ -4,7 +4,7 @@ import { getConvexClient } from "@/lib/convexServerClient";
 import { api } from "@/convex/_generated/api";
 
 export async function GET(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!orgId) return NextResponse.json({ error: "Organization is required" }, { status: 400 });
   const url = new URL(request.url);

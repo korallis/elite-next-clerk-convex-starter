@@ -8,7 +8,8 @@
 - Steps:
   1) Create/identify prod deployment in Convex dashboard
   2) Set env vars in prod: CONNECTION_ENCRYPTION_KEY, CONVEX_ADMIN_TOKEN, CLERK_WEBHOOK_SECRET, OPENAI_API_KEY, (optional) QDRANT_URL/QDRANT_API_KEY
-  3) Set NEXT_PUBLIC_CONVEX_URL to the prod deployment URL
+  3) Set NEXT_PUBLIC_CONVEX_URL to the prod deployment URL (cloud base): https://valiant-rook-385.convex.cloud
+     - HTTP actions/webhooks base: https://valiant-rook-385.convex.site
   4) In the VPS, put the same values into /etc/leo.env and restart the app
 
 ## Server provisioning (summary)

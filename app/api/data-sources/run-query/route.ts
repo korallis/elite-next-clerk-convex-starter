@@ -16,7 +16,7 @@ type RunQueryBody = {
 };
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -53,7 +53,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       rows: result.recordset,
       rowCount: result.rowsAffected[0] ?? result.recordset.length,
-      columns: result.recordset.length > 0 ? Object.keys(result.recordset[0]) : [],
+      columns:
+        result.recordset.length > 0
+          ? Object.keys(result.recordset[0] as Record<string, unknown>)
+          : [],
       statistics: {
         rowsAffected: result.rowsAffected,
         maxRows,

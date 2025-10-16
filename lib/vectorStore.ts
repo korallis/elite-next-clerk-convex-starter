@@ -1,4 +1,6 @@
-import { QdrantClient } from "qdrant-client";
+import { Api as QdrantApi, Distance } from "qdrant-client";
+
+type QdrantClient = QdrantApi<unknown>;
 
 export type VectorRecord = {
   key: string;
@@ -10,7 +12,14 @@ function getQdrantClient(): QdrantClient | null {
   const url = process.env.QDRANT_URL;
   const apiKey = process.env.QDRANT_API_KEY;
   if (!url || !apiKey) return null;
-  return new QdrantClient({ url, apiKey });
+  return new QdrantApi<unknown>({
+    baseUrl: url,
+    baseApiParams: {
+      headers: {
+        "api-key": apiKey,
+      },
+    },
+  });
 }
 
 function collectionNameForOrg(orgId: string) {
@@ -19,10 +28,10 @@ function collectionNameForOrg(orgId: string) {
 
 async function ensureCollection(client: QdrantClient, collection: string, dim: number) {
   try {
-    const exists = await client.getCollection(collection).catch(() => null);
-    if (!exists) {
-      await client.createCollection(collection, {
-        vectors: { size: dim, distance: "Cosine" },
+    const exists = await client.collections.getCollection(collection).catch(() => null);
+    if (!exists?.data) {
+      await client.collections.createCollection(collection, {
+        vectors: { size: dim, distance: Distance.Cosine },
       });
     }
   } catch (error) {
@@ -47,7 +56,7 @@ export async function upsertVectors(
     payload: r.metadata,
   }));
 
-  await client.upsert(collection, { points });
+  await client.collections.upsertPoints(collection, { points });
   return records.map((r) => r.key);
 }
 
@@ -59,10 +68,15 @@ export async function searchTopK(
   const client = getQdrantClient();
   if (!client) return [];
   const collection = collectionNameForOrg(orgId);
-  const res = await client.search(collection, {
+  const res = await client.collections.searchPoints(collection, {
     vector: queryVector,
     limit: topK,
-    with_payload: true,
+    with_payload: { include: ["*"] },
   });
-  return res.map((p) => ({ id: String(p.id), score: p.score ?? 0, payload: (p.payload as any) ?? {} }));
+  const results = Array.isArray(res.data?.result) ? res.data.result : [];
+  return results.map((p: any) => ({
+    id: String(p.id),
+    score: p.score ?? 0,
+    payload: (p.payload as Record<string, unknown>) ?? {},
+  }));
 }

@@ -1,40 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: bash deploy/provision.sh <app_user> <app_dir> <repo_url>
-APP_USER=${1:-www-data}
-APP_DIR=${2:-/var/www/leo}
-REPO_URL=${3:-https://github.com/korallis/leo.git}
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+ROOT_DIR=$(cd "${SCRIPT_DIR}/.." && pwd)
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y curl git nginx ufw
+INVENTORY_FILE=${1:-"${SCRIPT_DIR}/ansible/inventory.ini"}
+EXTRA_VARS=${2:-}
 
-# Node via NVM
-if ! command -v node >/dev/null 2>&1; then
-  su - ${APP_USER} -s /bin/bash -c "\
-    if [ ! -d \"$HOME/.nvm\" ]; then \n\
-      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash; \n\
-    fi; \n\
-    export NVM_DIR=\"$HOME/.nvm\"; \n\
-    . \"$HOME/.nvm/nvm.sh\"; \n\
-    nvm install 22; \n\
-    npm i -g pnpm; \n\
-  "
+if ! command -v ansible-playbook >/dev/null 2>&1; then
+  echo "[provision] ansible is required. Install via: pip install ansible" >&2
+  exit 1
 fi
 
-mkdir -p ${APP_DIR}
-if [ ! -d "${APP_DIR}/.git" ]; then
-  git clone ${REPO_URL} ${APP_DIR}
+if [ ! -f "${INVENTORY_FILE}" ]; then
+  echo "[provision] inventory file not found at ${INVENTORY_FILE}" >&2
+  echo "Copy ${SCRIPT_DIR}/ansible/inventory.example.ini to ${INVENTORY_FILE} and update host details." >&2
+  exit 1
 fi
 
-cd ${APP_DIR}
-su - ${APP_USER} -s /bin/bash -c "\
-  export NVM_DIR=\"$HOME/.nvm\"; \n\
-  . \"$HOME/.nvm/nvm.sh\"; \n\
-  cd ${APP_DIR}; \n\
-  pnpm install; \n\
-  pnpm build; \n\
-"
+echo "[provision] Installing required Ansible collections"
+ansible-galaxy collection install -r "${SCRIPT_DIR}/ansible/requirements.yml" >/dev/null
 
-echo "Provisioning complete. Configure systemd and nginx, then enable service."
+PLAYBOOK="${SCRIPT_DIR}/ansible/site.yml"
+
+CMD=(ansible-playbook -i "${INVENTORY_FILE}" "${PLAYBOOK}" -e "local_repo_root=${ROOT_DIR}")
+
+if [ -n "${EXTRA_VARS}" ]; then
+  CMD+=(-e "${EXTRA_VARS}")
+fi
+
+echo "[provision] Running Ansible playbook"
+"${CMD[@]}"
+
+echo "[provision] Playbook completed"

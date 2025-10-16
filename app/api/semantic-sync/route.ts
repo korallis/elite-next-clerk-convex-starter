@@ -1,12 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { sqlConnectionConfigSchema } from "@/lib/mssql";
-import { generateSemanticSnapshot } from "@/lib/semantic";
 import {
   createSyncRun,
   getOrgConnection,
   markSyncRunCompleted,
   markSyncRunFailed,
+  markConnectionSyncRequested,
   recordConnectionVerification,
   upsertSemanticArtifact,
 } from "@/lib/convexServerClient";
@@ -16,7 +16,7 @@ type SemanticSyncBody = {
 };
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "connectionId is required" }, { status: 422 });
   }
 
+  let stage: string = "get_connection";
   const connection = await getOrgConnection({
     orgId,
     connectionId: body.connectionId,
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Connection not found" }, { status: 404 });
   }
 
+  stage = "validate_config";
   const configResult = sqlConnectionConfigSchema.safeParse(connection.config);
   if (!configResult.success) {
     return NextResponse.json(
@@ -52,84 +54,29 @@ export async function POST(request: Request) {
     );
   }
 
+  stage = "mark_requested";
+  await markConnectionSyncRequested({
+    orgId,
+    connectionId: body.connectionId,
+    requestedAt: Date.now(),
+  });
+
+  stage = "create_run";
   const runId = await createSyncRun({ orgId, connectionId: body.connectionId });
 
-  try {
-    const { snapshot, embeddings } = await generateSemanticSnapshot(
-      orgId,
-      configResult.data
-    );
-    const version = snapshot.generatedAt;
+  const origin = new URL(request.url).origin;
+  // Kick off background execution via internal route secured by admin token
+  fetch(`${origin}/api/semantic-sync/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": process.env.CONVEX_ADMIN_TOKEN || "",
+    },
+    body: JSON.stringify({ orgId, connectionId: body.connectionId, runId }),
+    // Fire-and-forget
+  }).catch((err) => {
+    console.error("[semantic-sync] failed to dispatch background run", err);
+  });
 
-    for (const table of snapshot.tables) {
-      await upsertSemanticArtifact({
-        orgId,
-        connectionId: body.connectionId,
-        artifactType: "table",
-        artifactKey: table.key,
-        version,
-        payload: {
-          schema: table.schema,
-          name: table.name,
-          rowCount: table.rowCount,
-          description: table.description ?? null,
-          businessQuestions: table.businessQuestions ?? [],
-          columns: table.columns,
-          foreignKeys: table.foreignKeys,
-        },
-        embeddingId:
-          embeddings.find(
-            (item) =>
-              item.artifactType === "table" && item.artifactKey === table.key
-          )?.embeddingId ?? null,
-      });
-
-      for (const column of table.columns) {
-        const columnKey = `${table.key}.${column.name}`;
-        await upsertSemanticArtifact({
-          orgId,
-          connectionId: body.connectionId,
-          artifactType: "column",
-          artifactKey: columnKey,
-          version,
-          payload: {
-            schema: table.schema,
-            table: table.name,
-            column,
-          },
-          embeddingId:
-            embeddings.find(
-              (item) =>
-                item.artifactType === "column" && item.artifactKey === columnKey
-            )?.embeddingId ?? null,
-        });
-      }
-    }
-
-    await markSyncRunCompleted(runId);
-    await recordConnectionVerification({
-      orgId,
-      connectionId: body.connectionId,
-      lastVerifiedAt: Date.now(),
-      lastError: undefined,
-    });
-
-    return NextResponse.json({
-      success: true,
-      snapshot,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    await markSyncRunFailed(runId, message);
-    await recordConnectionVerification({
-      orgId,
-      connectionId: body.connectionId,
-      lastVerifiedAt: undefined,
-      lastError: message,
-    });
-    return NextResponse.json(
-      { error: "Semantic sync failed", details: message },
-      { status: 502 }
-    );
-  }
+  return NextResponse.json({ success: true, runId }, { status: 202 });
 }

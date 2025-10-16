@@ -1,5 +1,5 @@
-describe('jest smoke', () => {
-  it('adds numbers', () => {
-    expect(1 + 2).toBe(3);
+describe('noop (runner agnostic)', () => {
+  it('works', () => {
+    expect(true).toBe(true);
   });
 });

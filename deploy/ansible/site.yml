@@ -1,0 +1,200 @@
+---
+- name: Provision Leo production host
+  hosts: production
+  become: true
+  vars:
+    apt_packages:
+      - nginx
+      - python3-pip
+      - ufw
+      - git
+      - curl
+    docker_compose_version: "2.29.7"
+    docker_apt_dependencies:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 86400
+
+    - name: Install prerequisite packages
+      apt:
+        name: "{{ apt_packages + docker_apt_dependencies }}"
+        state: present
+
+    - name: Ensure docker apt repository key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Ensure docker apt repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/docker.list
+        mode: "0644"
+        content: |
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable
+
+    - name: Update apt cache after docker repo addition
+      apt:
+        update_cache: true
+
+  tasks:
+    - name: Install Docker Engine
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+
+    - name: Install python docker SDK
+      pip:
+        name:
+          - docker
+          - docker-compose
+
+    - name: Install docker compose plugin
+      ansible.builtin.get_url:
+        url: "https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/lib/docker/cli-plugins/docker-compose
+        mode: "0755"
+
+    - name: Ensure app user exists
+      user:
+        name: "{{ app_user }}"
+        create_home: true
+        comment: Leo App User
+
+    - name: Add app user to docker group
+      user:
+        name: "{{ app_user }}"
+        groups: docker
+        append: true
+
+    - name: Set UFW default incoming policy
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Allow SSH
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Allow HTTP/HTTPS traffic
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - 80
+        - 443
+
+    - name: Enable firewall
+      community.general.ufw:
+        state: enabled
+
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+        state: directory
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/shared"
+        - "{{ app_dir }}/shared/config"
+        - "{{ app_dir }}/shared/data"
+        - "{{ app_dir }}/shared/prometheus"
+        - "{{ app_dir }}/shared/loki"
+        - "{{ app_dir }}/shared/grafana"
+        - "{{ app_dir }}/shared/backups"
+        - "{{ repo_root }}"
+        - "{{ repo_root }}/deploy"
+        - "{{ repo_root }}/deploy/prometheus"
+        - "{{ repo_root }}/deploy/loki"
+        - "{{ repo_root }}/deploy/grafana/provisioning/datasources"
+        - "{{ repo_root }}/deploy/backups"
+
+    - name: Copy compose artifacts
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "{{ item.mode | default('0644') }}"
+      loop:
+        - { src: "../compose.production.yml", dest: "{{ repo_root }}/deploy/compose.production.yml" }
+        - { src: "../prometheus/prometheus.yml", dest: "{{ repo_root }}/deploy/prometheus/prometheus.yml" }
+        - { src: "../loki/config.yml", dest: "{{ repo_root }}/deploy/loki/config.yml" }
+        - { src: "../grafana/provisioning/datasources/datasource.yml", dest: "{{ repo_root }}/deploy/grafana/provisioning/datasources/datasource.yml" }
+        - { src: "../loki/promtail-config.yml", dest: "{{ repo_root }}/deploy/loki/promtail-config.yml" }
+        - { src: "../backups/cron.sh", dest: "{{ repo_root }}/deploy/backups/cron.sh", mode: "0755" }
+        - { src: "../backups/run-backup.sh", dest: "{{ repo_root }}/deploy/backups/run-backup.sh", mode: "0755" }
+
+    - name: Check for application sources
+      stat:
+        path: "{{ repo_root }}/package.json"
+      register: app_sources
+
+    - name: Ensure nginx config directory
+      file:
+        path: /etc/nginx/sites-available
+        state: directory
+
+    - name: Deploy nginx config
+      copy:
+        src: ../nginx.conf
+        dest: /etc/nginx/sites-available/leo
+        mode: "0644"
+
+    - name: Enable nginx site
+      file:
+        src: /etc/nginx/sites-available/leo
+        dest: /etc/nginx/sites-enabled/leo
+        state: link
+        force: true
+
+    - name: Remove default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Test nginx configuration
+      command: nginx -t
+
+    - name: Reload nginx
+      service:
+        name: nginx
+        state: reloaded
+
+    - name: Pull compose images
+      community.docker.docker_compose_v2:
+        project_src: "{{ repo_root }}/deploy"
+        files:
+          - compose.production.yml
+        pull: true
+        build: false
+      when: app_sources.stat.exists
+
+    - name: Ensure compose stack is running
+      community.docker.docker_compose_v2:
+        project_src: "{{ repo_root }}/deploy"
+        files:
+          - compose.production.yml
+        state: present
+      when: app_sources.stat.exists
+
+    - name: Prune unused docker objects (non-forced)
+      community.docker.docker_prune:
+        containers: true
+        images: true
+        networks: true
+        volumes: false
+        builder_cache: true

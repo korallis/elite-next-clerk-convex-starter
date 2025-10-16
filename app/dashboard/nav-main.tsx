@@ -1,6 +1,15 @@
 "use client"
 
-import { IconCirclePlusFilled, IconMail, type Icon } from "@tabler/icons-react"
+import React from "react"
+import {
+  IconCirclePlusFilled,
+  IconMail,
+  IconDashboard,
+  IconChartBar,
+  IconSparkles,
+  IconRocket,
+  IconDatabase,
+} from "@tabler/icons-react"
 import { usePathname, useRouter } from "next/navigation"
 import { useOptimistic, useTransition } from "react"
 
@@ -13,13 +22,21 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
+const iconMap: Record<string, React.ElementType> = {
+  dashboard: IconDashboard,
+  database: IconDatabase,
+  chart: IconChartBar,
+  sparkles: IconSparkles,
+  rocket: IconRocket,
+};
+
 export function NavMain({
   items,
 }: {
   items: {
     title: string
     url: string
-    icon?: Icon
+    icon?: string
   }[]
 }) {
   const pathname = usePathname()
@@ -70,7 +87,7 @@ export function NavMain({
                   isActive={isActive}
                   onClick={() => handleNavigation(item.url)}
                 >
-                  {item.icon && <item.icon />}
+                  {item.icon && iconMap[item.icon] && React.createElement(iconMap[item.icon])}
                   <span>{item.title}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

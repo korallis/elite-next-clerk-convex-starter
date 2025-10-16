@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: web
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - web:8080
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: web
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]

@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.8.1
+    container_name: qdrant
+    restart: always
+    ports:
+      - "127.0.0.1:6333:6333"
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+    volumes:
+      - /var/lib/qdrant:/qdrant/storage

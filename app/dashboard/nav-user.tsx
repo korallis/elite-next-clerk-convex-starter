@@ -15,7 +15,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
-import { useClerk, useUser } from "@clerk/nextjs"
+import { useClerk, useUser, SignOutButton } from "@clerk/nextjs"
 import { dark } from '@clerk/themes'
 import { useTheme } from "next-themes"
 
@@ -51,6 +51,13 @@ export function NavUser() {
               </div>
               <IconDotsVertical className="ml-auto size-4" />
             </SidebarMenuButton>
+      </SidebarMenuItem>
+      <SidebarMenuItem>
+        <SignOutButton redirectUrl="/sign-in">
+          <SidebarMenuButton size="lg" className="text-sidebar-accent-foreground hover:bg-sidebar-accent/60">
+            <span className="font-medium">Sign out</span>
+          </SidebarMenuButton>
+        </SignOutButton>
       </SidebarMenuItem>
     </SidebarMenu>
   )

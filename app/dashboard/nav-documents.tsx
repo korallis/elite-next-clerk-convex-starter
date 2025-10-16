@@ -1,11 +1,14 @@
 "use client"
 
+import * as React from "react"
 import {
   IconDots,
   IconFolder,
   IconShare3,
   IconTrash,
-  type Icon,
+  IconDatabase,
+  IconReport,
+  IconFileWord,
 } from "@tabler/icons-react"
 
 import {
@@ -31,10 +34,15 @@ export function NavDocuments({
   items: {
     name: string
     url: string
-    icon: Icon
+    icon: string
   }[]
 }) {
   const { isMobile } = useSidebar()
+  const iconMap: Record<string, React.ComponentType> = {
+    database: IconDatabase,
+    report: IconReport,
+    word: IconFileWord,
+  }
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -44,7 +52,7 @@ export function NavDocuments({
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild>
               <a href={item.url}>
-                <item.icon />
+                {item.icon && iconMap[item.icon] && React.createElement(iconMap[item.icon])}
                 <span>{item.name}</span>
               </a>
             </SidebarMenuButton>

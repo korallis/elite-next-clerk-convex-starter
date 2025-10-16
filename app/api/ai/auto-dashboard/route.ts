@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getOpenAIClient, DEFAULT_ANALYST_MODEL } from "@/lib/openai";
+import { dedupeAndLimitTiles } from "@/lib/autoDashboard";
 import { sqlConnectionConfigSchema } from "@/lib/mssql";
 import {
   getOrgConnection,
@@ -8,30 +9,33 @@ import {
 import { getConvexClient } from "@/lib/convexServerClient";
 import { api } from "@/convex/_generated/api";
 
-type Body = { connectionId: string; prompt: string; name?: string };
+type Tile = { title: string; sql: string; chart?: unknown };
+type Body = { connectionId: string; prompt?: string; name?: string; tiles?: Tile[] };
 
 const DASHBOARD_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     title: { type: "string" },
     tiles: {
       type: "array",
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           title: { type: "string" },
           sql: { type: "string" },
-          chart: { type: "object" },
+          chart: { type: "object", additionalProperties: false, properties: { type: { type: "string" } }, required: ["type"] },
         },
-        required: ["title", "sql"],
+        required: ["title", "sql", "chart"],
       },
     },
   },
   required: ["title", "tiles"],
-};
+} as const;
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!orgId) return NextResponse.json({ error: "Organization is required" }, { status: 400 });
 
@@ -42,8 +46,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.connectionId || !body.prompt) {
-    return NextResponse.json({ error: "connectionId and prompt are required" }, { status: 422 });
+  if (!body.connectionId || (!body.prompt && (!Array.isArray(body.tiles) || body.tiles.length === 0))) {
+    return NextResponse.json({ error: "connectionId and (prompt or tiles) are required" }, { status: 422 });
   }
 
   const connection = await getOrgConnection({ orgId, connectionId: body.connectionId, includeConfig: true });
@@ -55,29 +59,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Stored connection configuration is invalid" }, { status: 500 });
   }
 
-  const client = getOpenAIClient();
-  const response = await client.responses.create({
-    model: DEFAULT_ANALYST_MODEL,
-    input: [
-      { role: "system", content: "You are an analytics assistant. Produce a dashboard spec with multiple tiles for Microsoft SQL Server." },
-      { role: "user", content: body.prompt },
-    ],
-    response_format: { type: "json_schema", json_schema: { name: "dashboard", schema: DASHBOARD_SCHEMA } },
-  });
-
-  const parsed = parseJson(response);
-  if (!parsed) return NextResponse.json({ error: "Model output parse error" }, { status: 502 });
-
   const convex = getConvexClient();
   const dashboardId = await convex.mutation(api.dashboards.create, {
     adminToken: process.env.CONVEX_ADMIN_TOKEN!,
     orgId,
-    name: body.name ?? parsed.title,
+    name: body.name ?? (body.prompt || "Insights"),
     createdBy: userId,
   });
 
   let order = 0;
-  for (const tile of parsed.tiles) {
+  const tiles: Tile[] = Array.isArray(body.tiles) && body.tiles.length > 0
+    ? body.tiles
+    : await (async () => {
+        const client = getOpenAIClient();
+        const response = await client.responses.create({
+          model: DEFAULT_ANALYST_MODEL,
+          input: [
+            { role: "system", content: "You are an analytics assistant. Produce a dashboard spec with multiple tiles for Microsoft SQL Server." },
+            { role: "user", content: body.prompt! },
+          ],
+          text: { format: { type: "json_schema", name: "dashboard", schema: DASHBOARD_SCHEMA } },
+        } as any);
+        const parsed = parseJson(response);
+        if (!parsed) throw new Error("Model output parse error");
+        return (parsed.tiles as Tile[]) || [];
+      })();
+
+  const finalTiles = dedupeAndLimitTiles(tiles, parseInt(process.env.NEXT_PUBLIC_AUTO_DASH_MAX_TILES || "8", 10));
+  for (const tile of finalTiles) {
     await convex.mutation(api.dashboards.addTile, {
       adminToken: process.env.CONVEX_ADMIN_TOKEN!,
       orgId,

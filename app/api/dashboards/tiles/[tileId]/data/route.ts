@@ -54,7 +54,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
   const cache: Map<string, { ts: number; payload: any }> = global.__TILE_CACHE__;
   const hit = cache.get(cacheKey);
   if (hit && now - hit.ts < ttlMs) {
-    return NextResponse.json(hit.payload);
+    const res = NextResponse.json(hit.payload);
+    res.headers.set("x-request-id", randomId());
+    return res;
   }
 
   const start = now;
@@ -80,7 +82,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
         : [],
     };
     cache.set(cacheKey, { ts: Date.now(), payload });
-    return NextResponse.json(payload);
+    const res = NextResponse.json(payload);
+    res.headers.set("x-request-id", randomId());
+    return res;
   } catch (error) {
     await convex.mutation(api.queryAudits.record, {
       adminToken: process.env.CONVEX_ADMIN_TOKEN!,
@@ -94,6 +98,16 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
       status: "error",
       error: error instanceof Error ? error.message : String(error),
     });
-    return NextResponse.json({ error: "Query failed" }, { status: 502 });
+    const res = NextResponse.json({ error: "Query failed" }, { status: 502 });
+    res.headers.set("x-request-id", randomId());
+    return res;
   }
+
+function randomId(): string {
+  try {
+    return (globalThis.crypto?.randomUUID?.() as string) || Math.random().toString(36).slice(2);
+  } catch {
+    return Math.random().toString(36).slice(2);
+  }
+}
 }

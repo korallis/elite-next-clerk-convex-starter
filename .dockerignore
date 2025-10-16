@@ -1,0 +1,13 @@
+.git
+.gitignore
+node_modules
+.next
+dist
+build
+.turbo
+Dockerfile
+deploy
+tests
+.env*
+README.md
+docs

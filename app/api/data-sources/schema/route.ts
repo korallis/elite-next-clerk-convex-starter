@@ -11,7 +11,7 @@ type SchemaRequestBody = {
 };
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

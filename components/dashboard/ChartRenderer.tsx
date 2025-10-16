@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactElement } from "react";
 import {
   LineChart,
   Line,
@@ -37,54 +38,65 @@ export function ChartRenderer({ spec, rows }: { spec: ChartSpec; rows: any[] }) 
 
   const palette = ["#8884d8", "#82ca9d", "#ffc658"]; // simple palette
 
+  let chart: ReactElement | null = null;
+  if (spec.type === "line") {
+    chart = (
+      <LineChart data={data} margin={{ top: 10, right: 24, bottom: 0, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey={xKey} />
+        <YAxis />
+        <Tooltip />
+        <Legend />
+        {yKeys.map((k, i) => (
+          <Line key={k} type="monotone" dataKey={k} stroke={palette[i % palette.length]} dot={false} />
+        ))}
+      </LineChart>
+    );
+  } else if (spec.type === "bar") {
+    chart = (
+      <BarChart data={data} margin={{ top: 10, right: 24, bottom: 0, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey={xKey} />
+        <YAxis />
+        <Tooltip />
+        <Legend />
+        {yKeys.map((k, i) => (
+          <Bar key={k} dataKey={k} fill={palette[i % palette.length]} />
+        ))}
+      </BarChart>
+    );
+  } else if (spec.type === "area") {
+    chart = (
+      <AreaChart data={data} margin={{ top: 10, right: 24, bottom: 0, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey={xKey} />
+        <YAxis />
+        <Tooltip />
+        <Legend />
+        {yKeys.map((k, i) => (
+          <Area key={k} type="monotone" dataKey={k} stroke={palette[i % palette.length]} fill={palette[i % palette.length]} />
+        ))}
+      </AreaChart>
+    );
+  } else if (spec.type === "pie") {
+    chart = (
+      <PieChart>
+        <Tooltip />
+        <Legend />
+        <Pie data={data} dataKey={yKeys[0]} nameKey={xKey} outerRadius={100} fill={palette[0]}>
+          {data.map((_: any, idx: number) => (
+            <Cell key={`cell-${idx}`} fill={palette[idx % palette.length]} />
+          ))}
+        </Pie>
+      </PieChart>
+    );
+  }
+
+  if (!chart) return null;
+
   return (
     <div className="h-[320px] w-full">
-      <ResponsiveContainer>
-        {spec.type === "line" ? (
-          <LineChart data={data} margin={{ top: 10, right: 24, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xKey} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {yKeys.map((k, i) => (
-              <Line key={k} type="monotone" dataKey={k} stroke={palette[i % palette.length]} dot={false} />
-            ))}
-          </LineChart>
-        ) : spec.type === "bar" ? (
-          <BarChart data={data} margin={{ top: 10, right: 24, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xKey} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {yKeys.map((k, i) => (
-              <Bar key={k} dataKey={k} fill={palette[i % palette.length]} />
-            ))}
-          </BarChart>
-        ) : spec.type === "area" ? (
-          <AreaChart data={data} margin={{ top: 10, right: 24, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={xKey} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {yKeys.map((k, i) => (
-              <Area key={k} type="monotone" dataKey={k} stroke={palette[i % palette.length]} fill={palette[i % palette.length]} />
-            ))}
-          </AreaChart>
-        ) : spec.type === "pie" ? (
-          <PieChart>
-            <Tooltip />
-            <Legend />
-            <Pie data={data} dataKey={yKeys[0]} nameKey={xKey} outerRadius={100} fill={palette[0]}>
-              {data.map((_: any, idx: number) => (
-                <Cell key={`cell-${idx}`} fill={palette[idx % palette.length]} />
-              ))}
-            </Pie>
-          </PieChart>
-        ) : null}
-      </ResponsiveContainer>
+      <ResponsiveContainer>{chart}</ResponsiveContainer>
     </div>
   );
 }

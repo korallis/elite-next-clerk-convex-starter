@@ -3,6 +3,29 @@ import { mutation, query } from "./_generated/server";
 import { connectionConfigSchema, type ConnectionConfig } from "./validators/connection";
 import { assertAdminToken } from "./utils/adminAuth";
 
+const selectionModeValidator = v.union(
+  v.literal("all"),
+  v.literal("include"),
+  v.literal("exclude")
+);
+
+function normalizeTables(tables?: string[] | null) {
+  if (!tables || tables.length === 0) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const value of tables) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(trimmed);
+  }
+  return normalized;
+}
+
 export const list = query({
   args: { adminToken: v.string(), orgId: v.string() },
   handler: async (ctx, args) => {
@@ -49,6 +72,9 @@ export const create = mutation({
       tag: v.string(),
     }),
     createdBy: v.string(),
+    selectedTables: v.optional(v.array(v.string())),
+    excludedTables: v.optional(v.array(v.string())),
+    selectionMode: v.optional(selectionModeValidator),
   },
   handler: async (ctx, args) => {
     assertAdminToken(ctx, args.adminToken);
@@ -69,6 +95,10 @@ export const create = mutation({
       updatedAt: Date.now(),
       lastVerifiedAt: undefined,
       lastError: undefined,
+      selectedTables: normalizeTables(args.selectedTables),
+      excludedTables: normalizeTables(args.excludedTables),
+      selectionMode: args.selectionMode ?? "all",
+      syncRequestedAt: undefined,
     });
     const inserted = await ctx.db.get(connectionId);
     if (!inserted) {
@@ -114,5 +144,25 @@ export const remove = mutation({
       throw new Error("Connection not found");
     }
     await ctx.db.delete(args.connectionId);
+  },
+});
+
+export const markSyncRequested = mutation({
+  args: {
+    adminToken: v.string(),
+    orgId: v.string(),
+    connectionId: v.id("orgConnections"),
+    requestedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    assertAdminToken(ctx, args.adminToken);
+    const doc = await ctx.db.get(args.connectionId);
+    if (!doc || doc.orgId !== args.orgId) {
+      throw new Error("Connection not found");
+    }
+    await ctx.db.patch(args.connectionId, {
+      syncRequestedAt: args.requestedAt,
+      updatedAt: Date.now(),
+    });
   },
 });
