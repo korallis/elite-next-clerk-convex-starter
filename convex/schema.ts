@@ -124,6 +124,12 @@ export default defineSchema({
       .index("byOrgCreatedAt", ["orgId", "createdAt"])
       .index("byOrgAndQuestion", ["orgId", "question"]),
 
+    orgSettings: defineTable({
+      orgId: v.string(),
+      settings: v.string(), // JSON string
+      updatedAt: v.number(),
+    }).index("byOrg", ["orgId"]),
+
     dashboards: defineTable({
       orgId: v.string(),
       name: v.string(),

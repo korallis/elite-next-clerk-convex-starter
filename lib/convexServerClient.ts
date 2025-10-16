@@ -5,12 +5,28 @@ import type { ConnectionConfig } from "@/convex/validators/connection";
 
 let convexClient: ConvexHttpClient | null = null;
 
-function getConvexUrl(): string {
-  const url = process.env.CONVEX_DEPLOYMENT ?? process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!url) {
-    throw new Error("Missing CONVEX_DEPLOYMENT or NEXT_PUBLIC_CONVEX_URL env var");
+function normalizeConvexUrl(raw: string): string {
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw;
   }
-  return url;
+  if (raw.startsWith("dev:") || raw.startsWith("prod:")) {
+    const slug = raw.split(":")[1];
+    return `https://${slug}.convex.cloud`;
+  }
+  if (raw.startsWith("localhost") || /^[\d.]+(?::\d+)?$/.test(raw)) {
+    return raw.startsWith("http") ? raw : `http://${raw}`;
+  }
+  return raw;
+}
+
+function getConvexUrl(): string {
+  const candidates = [process.env.NEXT_PUBLIC_CONVEX_URL, process.env.CONVEX_DEPLOYMENT];
+  for (const candidate of candidates) {
+    if (candidate) {
+      return normalizeConvexUrl(candidate);
+    }
+  }
+  throw new Error("Missing CONVEX_DEPLOYMENT or NEXT_PUBLIC_CONVEX_URL env var");
 }
 
 function getConvexAdminToken(): string {
@@ -33,6 +49,9 @@ export async function createOrgConnection(args: {
   name: string;
   encryptedConfig: { algorithm: string; iv: string; ciphertext: string; tag: string };
   createdBy: string;
+  selectedTables?: string[];
+  excludedTables?: string[];
+  selectionMode?: "all" | "include" | "exclude";
 }): Promise<string> {
   const client = getConvexClient();
   const adminToken = getConvexAdminToken();
@@ -43,6 +62,9 @@ export async function createOrgConnection(args: {
     driver: "mssql",
     encryptedConfig: args.encryptedConfig as any,
     createdBy: args.createdBy,
+    selectedTables: args.selectedTables,
+    excludedTables: args.excludedTables,
+    selectionMode: args.selectionMode,
   });
   return (result as any).id ?? (result as unknown as string);
 }
@@ -72,6 +94,103 @@ export async function listOrgConnections(orgId: string) {
   const client = getConvexClient();
   const adminToken = getConvexAdminToken();
   return client.query(api.orgConnections.list, { adminToken, orgId });
+}
+
+export async function markConnectionSyncRequested(args: {
+  orgId: string;
+  connectionId: string;
+  requestedAt: number;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  await client.mutation(api.orgConnections.markSyncRequested, {
+    adminToken,
+    orgId: args.orgId,
+    connectionId: args.connectionId as never,
+    requestedAt: args.requestedAt,
+  });
+}
+
+export async function getActiveConnectionDraft(args: {
+  orgId: string;
+  userId: string;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  return client.query(api.connectionDrafts.getActiveForUser, {
+    adminToken,
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+}
+
+export async function getConnectionDraft(args: {
+  orgId: string;
+  draftId: string;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  return client.query(api.connectionDrafts.get, {
+    adminToken,
+    orgId: args.orgId,
+    draftId: args.draftId as never,
+  });
+}
+
+export async function saveConnectionDraft(args: {
+  orgId: string;
+  userId: string;
+  draftId?: string;
+  name?: string;
+  step?: number;
+  encryptedConfig?: { algorithm: string; iv: string; ciphertext: string; tag: string };
+  selectedTables?: string[];
+  selectionMode?: "all" | "include" | "exclude";
+}): Promise<string> {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  const result = await client.mutation(api.connectionDrafts.save, {
+    adminToken,
+    orgId: args.orgId,
+    userId: args.userId,
+    draftId: args.draftId as never,
+    name: args.name,
+    step: args.step,
+    encryptedConfig: args.encryptedConfig as any,
+    selectedTables: args.selectedTables,
+    selectionMode: args.selectionMode,
+  });
+  return (result as string) ?? (result as any);
+}
+
+export async function removeConnectionDraft(args: {
+  orgId: string;
+  userId: string;
+  draftId: string;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  await client.mutation(api.connectionDrafts.remove, {
+    adminToken,
+    orgId: args.orgId,
+    userId: args.userId,
+    draftId: args.draftId as never,
+  });
+}
+
+export async function listSemanticSyncRuns(args: {
+  orgId: string;
+  connectionId: string;
+  limit?: number;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  return client.query(api.semanticSyncRuns.listRecent, {
+    adminToken,
+    orgId: args.orgId,
+    connectionId: args.connectionId as never,
+    limit: args.limit,
+  });
 }
 
 export async function recordConnectionVerification(args: {
@@ -144,6 +263,34 @@ export async function markSyncRunFailed(runId: string, error: string) {
   });
 }
 
+export async function upsertSyncStage(args: {
+  runId: string;
+  stage: string;
+  status: "pending" | "running" | "completed" | "failed";
+  error?: string;
+  metrics?: Record<string, unknown>;
+}) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  await client.mutation(api.semanticSyncStages.upsert, {
+    adminToken,
+    runId: args.runId as never,
+    stage: args.stage,
+    status: args.status,
+    error: args.error,
+    metrics: args.metrics ? JSON.stringify(args.metrics) : undefined,
+  });
+}
+
+export async function listSyncStages(runId: string) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  return client.query(api.semanticSyncStages.listByRun, {
+    adminToken,
+    runId: runId as never,
+  });
+}
+
 export async function listSemanticArtifacts(args: {
   orgId: string;
   connectionId: string;
@@ -204,4 +351,19 @@ export async function countOrgErrors(args: { orgId: string; windowMs: number }) 
     orgId: args.orgId,
     windowMs: args.windowMs,
   });
+}
+
+export async function getOrgSettings(orgId: string): Promise<{ rateLimitDaily?: number; errorWindowLimit?: number } | null> {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  const doc = await client.query((api as any).orgSettings.get, { adminToken, orgId } as any).catch(() => null as any);
+  const settings = (doc as any)?.settings ?? null;
+  if (!settings) return null;
+  return settings as any;
+}
+
+export async function setOrgSettings(orgId: string, settings: Record<string, unknown>) {
+  const client = getConvexClient();
+  const adminToken = getConvexAdminToken();
+  await client.mutation((api as any).orgSettings.upsert, { adminToken, orgId, settingsJson: JSON.stringify(settings) } as any);
 }

@@ -12,6 +12,7 @@ import {
   recordQueryAudit,
   countOrgQueries,
   countOrgErrors,
+  getOrgSettings,
 } from "@/lib/convexServerClient";
 
 type QueryBody = {
@@ -22,11 +23,13 @@ type QueryBody = {
 
 const RESPONSE_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     sql: { type: "string" },
     rationale: { type: "string" },
     chart: {
       type: "object",
+      additionalProperties: false,
       properties: {
         type: {
           type: "string",
@@ -38,20 +41,20 @@ const RESPONSE_SCHEMA = {
           items: { type: "string" },
         },
         grouping: { type: ["string", "null"] },
-        options: { type: "object", additionalProperties: true },
+        options: { type: "object", additionalProperties: false, properties: {}, required: [] },
       },
-      required: ["type"],
+      required: ["type", "x", "y", "grouping", "options"],
     },
     follow_up_questions: {
       type: "array",
       items: { type: "string" },
     },
   },
-  required: ["sql", "rationale"],
-};
+  required: ["sql", "rationale", "chart", "follow_up_questions"],
+} as const;
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -90,7 +93,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const dailyLimit = parseInt(process.env.ORG_DAILY_QUERY_LIMIT || "500", 10);
+  const orgSettings = await getOrgSettings(orgId).catch(() => null);
+  const dailyLimit = Number(orgSettings?.rateLimitDaily) || parseInt(process.env.ORG_DAILY_QUERY_LIMIT || "500", 10);
   const recentCount = await countOrgQueries({ orgId, windowMs: 24 * 60 * 60 * 1000 });
   if (recentCount >= dailyLimit) {
     return NextResponse.json(
@@ -98,8 +102,9 @@ export async function POST(request: Request) {
       { status: 429 }
     );
   }
+  const errorWindowLimit = Number(orgSettings?.errorWindowLimit) || 5;
   const recentErrors = await countOrgErrors({ orgId, windowMs: 10 * 60 * 1000 });
-  if (recentErrors >= 5) {
+  if (recentErrors >= errorWindowLimit) {
     return NextResponse.json(
       { error: "Temporary pause due to repeated errors. Please try again later." },
       { status: 429 }
@@ -135,14 +140,14 @@ export async function POST(request: Request) {
         content: prompt,
       },
     ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
+    text: {
+      format: {
+        type: "json_schema",
         name: "analysis_response",
         schema: RESPONSE_SCHEMA,
       },
     },
-  });
+  } as any);
 
   const parsed = extractStructuredResponse(response);
   if (!parsed) {
@@ -183,7 +188,7 @@ export async function POST(request: Request) {
       rowCount: queryResult.recordset.length,
       columns:
         queryResult.recordset.length > 0
-          ? Object.keys(queryResult.recordset[0])
+          ? Object.keys(queryResult.recordset[0] as Record<string, unknown>)
           : [],
       executionMs: durationMs,
     });
