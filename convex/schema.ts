@@ -124,6 +124,16 @@ export default defineSchema({
       .index("byOrgCreatedAt", ["orgId", "createdAt"])
       .index("byOrgAndQuestion", ["orgId", "question"]),
 
+    auditArchives: defineTable({
+      orgId: v.string(),
+      connectionId: v.id("orgConnections"),
+      createdAt: v.number(),
+      archivedAt: v.number(),
+      doc: v.string(), // JSON snapshot of audit row
+    })
+      .index("byOrgCreatedAt", ["orgId", "createdAt"])
+      .index("byOrgArchivedAt", ["orgId", "archivedAt"]),
+
     orgSettings: defineTable({
       orgId: v.string(),
       settings: v.string(), // JSON string
