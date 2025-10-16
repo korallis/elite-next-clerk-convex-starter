@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ChartRenderer } from "@/components/dashboard/ChartRenderer";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -47,12 +48,14 @@ const initialConfig = {
   user: "",
   password: "",
   port: "1433",
+  encrypt: true,
+  trustServerCertificate: false,
 };
 
 export function AnalyticsDashboard() {
   const [connections, setConnections] = useState<ConnectionSummary[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  const [configForm, setConfigForm] = useState(initialConfig);
+  const [configForm, setConfigForm] = useState(() => ({ ...initialConfig }));
   const [creatingConnection, setCreatingConnection] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [question, setQuestion] = useState("");
@@ -113,6 +116,10 @@ export function AnalyticsDashboard() {
             user: configForm.user,
             password: configForm.password,
             port: Number(configForm.port) || 1433,
+            options: {
+              encrypt: configForm.encrypt,
+              trustServerCertificate: configForm.trustServerCertificate,
+            },
           },
         }),
       });
@@ -120,7 +127,7 @@ export function AnalyticsDashboard() {
         const data = await response.json();
         throw new Error(data.error ?? "Failed to create connection");
       }
-      setConfigForm(initialConfig);
+      setConfigForm(() => ({ ...initialConfig }));
       await fetchConnections();
     } catch (err) {
       console.error(err);
@@ -345,7 +352,40 @@ export function AnalyticsDashboard() {
                 max={65535}
               />
             </div>
-            <div className="flex items-end">
+            <div className="space-y-3 rounded-md border border-border/40 bg-muted/40 p-4 text-sm sm:col-span-2">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-medium">Encrypt connection</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use TLS when connecting to SQL Server. Recommended for production workloads.
+                  </p>
+                </div>
+                <Switch
+                  id="encrypt"
+                  checked={configForm.encrypt}
+                  onCheckedChange={(checked) =>
+                    setConfigForm((prev) => ({ ...prev, encrypt: Boolean(checked) }))
+                  }
+                />
+              </div>
+              <Separator />
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-medium">Trust server certificate</p>
+                  <p className="text-xs text-muted-foreground">
+                    Allow self-signed certificates. Only enable when using IP-allowlisted tunnels you control.
+                  </p>
+                </div>
+                <Switch
+                  id="trustServerCertificate"
+                  checked={configForm.trustServerCertificate}
+                  onCheckedChange={(checked) =>
+                    setConfigForm((prev) => ({ ...prev, trustServerCertificate: Boolean(checked) }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="flex items-end sm:col-span-2">
               <Button type="submit" disabled={creatingConnection}>
                 {creatingConnection ? "Connecting..." : "Save Connection"}
               </Button>
