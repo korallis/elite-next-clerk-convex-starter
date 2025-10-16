@@ -32,3 +32,22 @@ export const DEFAULT_EMBEDDING_MODEL =
 
 export const DEFAULT_ANALYST_MODEL =
   process.env.OPENAI_ANALYST_MODEL ?? "o4-mini";
+
+// Simple retry helper for OpenAI calls with jittered backoff
+export async function withOpenAIRetry<T>(fn: () => Promise<T>, opts?: { retries?: number }) {
+  const maxRetries = Math.max(0, Math.floor(opts?.retries ?? 2));
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const status = err?.status ?? err?.response?.status;
+      const retriable = status === 429 || status >= 500 || err?.code === "ETIMEDOUT";
+      if (attempt >= maxRetries || !retriable) throw err;
+      const delay = Math.min(2000 * (attempt + 1), 8000) + Math.floor(Math.random() * 250);
+      await new Promise((r) => setTimeout(r, delay));
+      attempt++;
+    }
+  }
+}

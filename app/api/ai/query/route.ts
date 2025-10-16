@@ -5,7 +5,7 @@ import {
   withSqlPool,
   executeReadOnlyQuery,
 } from "@/lib/mssql";
-import { getOpenAIClient, DEFAULT_ANALYST_MODEL, DEFAULT_EMBEDDING_MODEL } from "@/lib/openai";
+import { getOpenAIClient, DEFAULT_ANALYST_MODEL, DEFAULT_EMBEDDING_MODEL, withOpenAIRetry } from "@/lib/openai";
 import {
   getOrgConnection,
   listSemanticArtifacts,
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
   const prompt = buildPrompt(body.question, relevantTables);
 
   const client = getOpenAIClient();
-  const response = await client.responses.create({
+  const response = await withOpenAIRetry(() => client.responses.create({
     model: DEFAULT_ANALYST_MODEL,
     input: [
       {
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
         schema: RESPONSE_SCHEMA,
       },
     },
-  } as any);
+  } as any));
 
   const parsed = extractStructuredResponse(response);
   if (!parsed) {
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
   try {
     const start = Date.now();
     const queryResult = await withSqlPool(configResult.data, (pool) =>
-      executeReadOnlyQuery(pool, sql, {}, { maxRows })
+      executeReadOnlyQueryWithRetry(pool, sql, {}, { maxRows, retries: 2 })
     );
     const durationMs = Date.now() - start;
 

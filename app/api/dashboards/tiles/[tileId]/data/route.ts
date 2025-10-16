@@ -2,7 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getConvexClient, listOrgConnections } from "@/lib/convexServerClient";
 import { api } from "@/convex/_generated/api";
-import { sqlConnectionConfigSchema, withSqlPool, executeReadOnlyQuery } from "@/lib/mssql";
+import { sqlConnectionConfigSchema, withSqlPool, executeReadOnlyQueryWithRetry } from "@/lib/mssql";
 import crypto from "crypto";
 import { getOrgConnection } from "@/lib/convexServerClient";
 
@@ -59,7 +59,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
 
   const start = now;
   try {
-    const result = await withSqlPool(cfg, (pool) => executeReadOnlyQuery(pool, tile.sql, params, { maxRows: 5000 }));
+    const result = await withSqlPool(cfg, (pool) => executeReadOnlyQueryWithRetry(pool, tile.sql, params, { maxRows: 5000, retries: 2 }));
     const durationMs = Date.now() - start;
     // Record audit for freshness tracking
     await convex.mutation(api.queryAudits.record, {
