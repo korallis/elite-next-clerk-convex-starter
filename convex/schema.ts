@@ -166,5 +166,18 @@ export default defineSchema({
     })
       .index("byDashboard", ["dashboardId"]) 
       .index("byOrg", ["orgId"]),
+
+    risks: defineTable({
+      orgId: v.string(),
+      title: v.string(),
+      owner: v.string(),
+      probability: v.number(), // 0..1
+      impact: v.number(), // 0..1
+      status: v.string(), // open, mitigated, closed
+      trigger: v.optional(v.string()),
+      mitigation: v.optional(v.string()),
+      updatedAt: v.optional(v.number()),
+    })
+      .index("byOrg", ["orgId"]),
     
   });

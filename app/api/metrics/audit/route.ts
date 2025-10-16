@@ -4,9 +4,10 @@ import { getConvexClient } from "@/lib/convexServerClient";
 import { api } from "@/convex/_generated/api";
 
 export async function GET(request: NextRequest) {
-  const { userId, orgId } = await auth();
+  const { userId, orgId, orgRole } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!orgId) return NextResponse.json({ error: "Organization is required" }, { status: 400 });
+  if (String(orgRole || "").toLowerCase() !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(request.url);
   const connectionId = url.searchParams.get("connectionId") || undefined;
@@ -39,14 +40,14 @@ export async function GET(request: NextRequest) {
       const header = ["createdAt","userId","connectionId","question","sql","rowCount","durationMs","status","error"].join(",");
       const rows = filtered.map((d) => [
         new Date(d.createdAt).toISOString(),
-        safe(d.userId),
+        safe(mask(d.userId)),
         safe(String(d.connectionId)),
-        csvEsc(d.question),
-        csvEsc(d.sql),
+        csvEsc(mask(d.question)),
+        csvEsc(mask(d.sql)),
         String(d.rowCount ?? 0),
         String(d.durationMs ?? 0),
         safe(d.status),
-        csvEsc(d.error || ""),
+        csvEsc(mask(d.error || "")),
       ].join(","));
       const csv = [header, ...rows].join("\n");
       return new NextResponse(csv, {
@@ -73,4 +74,10 @@ function csvEsc(s: string): string {
 
 function safe(s: unknown): string {
   return s == null ? "" : String(s);
+}
+
+function mask(s: string): string {
+  if (!s) return s;
+  // Basic masking for potential secrets/tokens/long strings
+  return s.replace(/[A-Za-z0-9_\-]{24,}/g, (m) => `${m.slice(0, 4)}…${m.slice(-4)}`);
 }
