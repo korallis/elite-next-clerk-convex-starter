@@ -1,0 +1,30 @@
+name: Risk Review
+
+on:
+  schedule:
+    - cron: '0 16 * * 5'
+  workflow_dispatch: {}
+
+jobs:
+  risks:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Fetch risks and post summary
+        env:
+          RISK_API_URL: ${{ secrets.RISK_API_URL }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            if (!process.env.RISK_API_URL) {
+              core.info('RISK_API_URL not configured; skipping');
+              return;
+            }
+            const fetch = (await import('node-fetch')).default;
+            const res = await fetch(process.env.RISK_API_URL);
+            const json = await res.json();
+            const items = json.items || [];
+            const lines = items.map(r => `- ${r.title} (P=${r.probability}, I=${r.impact}) owner=${r.owner} status=${r.status}`);
+            const body = ['Weekly Risk Review', ...lines, `Generated: ${new Date().toISOString()}`].join('\n');
+            await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: `Risk Review ${new Date().toISOString().slice(0,10)}`, body });

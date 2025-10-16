@@ -179,5 +179,15 @@ export default defineSchema({
       updatedAt: v.optional(v.number()),
     })
       .index("byOrg", ["orgId"]),
+
+    prompts: defineTable({
+      orgId: v.string(),
+      key: v.string(),
+      text: v.string(),
+      version: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("byOrg", ["orgId"])
+      .index("byOrgAndKey", ["orgId", "key"]),
     
   });

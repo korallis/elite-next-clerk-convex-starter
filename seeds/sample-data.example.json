@@ -1,0 +1,23 @@
+{
+  "tables": [
+    {
+      "schema": "dbo",
+      "name": "Orders",
+      "columns": [
+        { "name": "OrderID", "type": "int" },
+        { "name": "OrderDate", "type": "datetime" },
+        { "name": "CustomerID", "type": "int" },
+        { "name": "Amount", "type": "decimal(18,2)" }
+      ]
+    },
+    {
+      "schema": "dbo",
+      "name": "Customers",
+      "columns": [
+        { "name": "CustomerID", "type": "int" },
+        { "name": "Name", "type": "nvarchar(200)" },
+        { "name": "Region", "type": "nvarchar(64)" }
+      ]
+    }
+  ]
+}

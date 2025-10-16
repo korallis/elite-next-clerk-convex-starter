@@ -1,0 +1,38 @@
+name: Weekly Status
+
+on:
+  schedule:
+    - cron: '0 15 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Generate weekly status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const { data: issues } = await github.rest.issues.listForRepo({ owner, repo, state: 'open' });
+            const openCount = issues.length;
+            const byLabel = {};
+            for (const i of issues) {
+              for (const l of i.labels) {
+                const name = typeof l === 'string' ? l : l.name;
+                if (!name) continue;
+                byLabel[name] = (byLabel[name] || 0) + 1;
+              }
+            }
+            const body = [
+              `Weekly Status for ${owner}/${repo}`,
+              `Open issues: ${openCount}`,
+              'By label:',
+              ...Object.entries(byLabel).map(([k,v]) => `- ${k}: ${v}`),
+              `Generated: ${new Date().toISOString()}`
+            ].join('\n');
+            await github.rest.issues.create({ owner, repo, title: `Weekly Status ${new Date().toISOString().slice(0,10)}`, body });
