@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
 import { shouldSampleColumn } from "@/lib/semantic";
+import { aggregateTableScoresFromHits, rankTablesFromHits } from "@/lib/retrieval";
 
 describe("shouldSampleColumn", () => {
   const mk = (data_type: string) => ({
@@ -24,5 +24,26 @@ describe("shouldSampleColumn", () => {
     ["int", "bigint", "float", "decimal"].forEach((t) => {
       expect(shouldSampleColumn(mk(t))).toBe(false);
     });
+  });
+
+  it("aggregates hits: column boosts owning table", () => {
+    const hits = [
+      { id: "column:dbo.can_candidates.status", score: 0.8 },
+      { id: "table:dbo.awr_clock", score: 0.4 },
+      { id: "column:dbo.can_candidate_status.name", score: 0.9 },
+    ];
+    const agg = aggregateTableScoresFromHits(hits as any);
+    expect(agg.get("dbo.can_candidates")).toBeCloseTo(0.8, 4);
+    expect(agg.get("dbo.can_candidate_status")).toBeCloseTo(0.9, 4);
+    expect(agg.get("dbo.awr_clock")).toBeCloseTo(0.4, 4);
+
+    const tables = [
+      { artifactKey: "dbo.can_candidates" },
+      { artifactKey: "dbo.can_candidate_status" },
+      { artifactKey: "dbo.awr_clock" },
+    ];
+    const ranked = rankTablesFromHits(hits as any, tables as any, 5);
+    expect(ranked[0].artifactKey).toBe("dbo.can_candidate_status");
+    expect(ranked[1].artifactKey).toBe("dbo.can_candidates");
   });
 });

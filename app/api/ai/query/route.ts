@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   sqlConnectionConfigSchema,
   withSqlPool,
-  executeReadOnlyQuery,
+  executeReadOnlyQueryWithRetry,
 } from "@/lib/mssql";
 import { getOpenAIClient, DEFAULT_ANALYST_MODEL, DEFAULT_EMBEDDING_MODEL, withOpenAIRetry } from "@/lib/openai";
 import {
@@ -14,6 +14,7 @@ import {
   countOrgErrors,
   getOrgSettings,
 } from "@/lib/convexServerClient";
+import { rankTablesFromHits } from "@/lib/retrieval";
 
 type QueryBody = {
   connectionId: string;
@@ -178,7 +179,7 @@ export async function POST(request: Request) {
       status: "success",
     });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       sql,
       rationale: parsed.rationale,
@@ -192,6 +193,8 @@ export async function POST(request: Request) {
           : [],
       executionMs: durationMs,
     });
+    res.headers.set("x-request-id", cryptoRandomId());
+    return res;
   } catch (error) {
     await recordQueryAudit({
       orgId,
@@ -205,7 +208,7 @@ export async function POST(request: Request) {
       error: error instanceof Error ? error.message : "Unknown error",
     });
 
-    return NextResponse.json(
+    const res = NextResponse.json(
       {
         error: "Query execution failed",
         details: error instanceof Error ? error.message : "Unknown error",
@@ -213,6 +216,8 @@ export async function POST(request: Request) {
       },
       { status: 502 }
     );
+    res.headers.set("x-request-id", cryptoRandomId());
+    return res;
   }
 }
 
@@ -239,8 +244,21 @@ async function selectRelevantTables(orgId: string, question: string, tables: Tab
     const vector = embedding.data[0].embedding;
     const { searchTopK } = await import("@/lib/vectorStore");
     const hits = await searchTopK(orgId, vector, 10);
-    const keys = new Set(hits.map((h) => h.id));
-    const ranked = tables.filter((t) => keys.has(`table:${t.artifactKey}`) || keys.has(`column:${t.artifactKey}`));
+
+    // Telemetry (debug): count table vs column hits and top candidates
+    try {
+      const tableHits = hits.filter((h) => h.id.startsWith("table:")).length;
+      const columnHits = hits.filter((h) => h.id.startsWith("column:")).length;
+      const topIds = hits.slice(0, 5).map((h) => h.id).join(", ");
+      console.log(`[retrieval] tableHits=${tableHits} columnHits=${columnHits} top=${topIds}`);
+    } catch {}
+
+    const ranked = rankTablesFromHits(
+      hits,
+      tables.map((t) => ({ artifactKey: t.artifactKey })) as any,
+      5
+    ).map((r) => tables.find((t) => t.artifactKey === r.artifactKey)!)
+     .filter(Boolean);
     if (ranked.length > 0) return ranked.slice(0, 5);
   } catch {}
   const terms = question.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
@@ -306,4 +324,12 @@ function extractStructuredResponse(response: any) {
     }
   }
   return null;
+}
+
+function cryptoRandomId(): string {
+  try {
+    return (globalThis.crypto?.randomUUID?.() as string) || Math.random().toString(36).slice(2);
+  } catch {
+    return Math.random().toString(36).slice(2);
+  }
 }
