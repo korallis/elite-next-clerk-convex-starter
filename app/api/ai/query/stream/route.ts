@@ -1,12 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
 import { DEFAULT_ANALYST_MODEL, getOpenAIClient } from "@/lib/openai";
-import { sqlConnectionConfigSchema, withSqlPool, executeReadOnlyQuery } from "@/lib/mssql";
+import { sqlConnectionConfigSchema, withSqlPool, executeReadOnlyQueryWithRetry } from "@/lib/mssql";
 import { getOrgConnection, listSemanticArtifacts } from "@/lib/convexServerClient";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const { userId, orgId } = auth();
+  const { userId, orgId } = await auth();
   if (!userId || !orgId) return new Response("Unauthorized", { status: 401 });
   const { connectionId, question, maxRows } = (await request.json()) as {
     connectionId: string;
@@ -41,18 +41,76 @@ export async function POST(request: Request) {
             { role: "system", content: "You are an analytics expert for Microsoft SQL Server. Return JSON only." },
             { role: "user", content: prompt },
           ],
-          response_format: { type: "json_schema", json_schema: { name: "analysis", schema: RESPONSE_SCHEMA } },
-        });
+          text: { format: { type: "json_schema", name: "analysis", schema: RESPONSE_SCHEMA } },
+        } as any);
         const parsed = extract(resp);
         if (!parsed) throw new Error("parse_error");
         send("draft", { sql: parsed.sql, rationale: parsed.rationale, chart: parsed.chart ?? null });
 
         // Execute SQL
-        const result = await withSqlPool(cfg, (pool) => executeReadOnlyQuery(pool, parsed.sql, {}, { maxRows: Math.min(Math.max(maxRows ?? 5000, 1), 20000) }));
+        const result = await withSqlPool(cfg, (pool) => executeReadOnlyQueryWithRetry(pool, parsed.sql, {}, { maxRows: Math.min(Math.max(maxRows ?? 5000, 1), 20000), retries: 2 }));
         send("result", {
           rows: result.recordset,
-          columns: result.recordset.length ? Object.keys(result.recordset[0]) : [],
+          columns: result.recordset.length
+            ? Object.keys(result.recordset[0] as Record<string, unknown>)
+            : [],
         });
+        send("done", {});
+        controller.close();
+      } catch (error) {
+        send("error", { message: error instanceof Error ? error.message : String(error) });
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+export async function GET(request: Request) {
+  const { userId, orgId } = await auth();
+  if (!userId || !orgId) return new Response("Unauthorized", { status: 401 });
+  const url = new URL(request.url);
+  const connectionId = url.searchParams.get("connectionId") || "";
+  const question = url.searchParams.get("question") || "";
+  const maxRows = url.searchParams.get("maxRows");
+  const connection = await getOrgConnection({ orgId, connectionId, includeConfig: true });
+  if (!connection || !("config" in connection) || !connection.config) {
+    return new Response("Not found", { status: 404 });
+  }
+  const cfg = sqlConnectionConfigSchema.parse(connection.config);
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(new TextEncoder().encode(`event: ${event}\n`));
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+      send("status", { message: "thinking" });
+
+      try {
+        const tables = await listSemanticArtifacts({ orgId, connectionId, artifactType: "table" });
+        send("context", { tables: tables?.length || 0 });
+        const client = getOpenAIClient();
+        const prompt = buildPrompt(question, (tables ?? []).slice(0, 5));
+        const resp = await client.responses.create({
+          model: DEFAULT_ANALYST_MODEL,
+          input: [
+            { role: "system", content: "You are an analytics expert for Microsoft SQL Server. Return JSON only." },
+            { role: "user", content: prompt },
+          ],
+          text: { format: { type: "json_schema", name: "analysis", schema: RESPONSE_SCHEMA } },
+        } as any);
+        const parsed = extract(resp);
+        if (!parsed) throw new Error("parse_error");
+        send("draft", { sql: parsed.sql, rationale: parsed.rationale, chart: parsed.chart ?? null });
+        const result = await withSqlPool(cfg, (pool) => executeReadOnlyQueryWithRetry(pool, parsed.sql, {}, { maxRows: Math.min(Math.max(Number(maxRows) || 5000, 1), 20000), retries: 2 }));
+        send("result", { rows: result.recordset, columns: result.recordset.length ? Object.keys(result.recordset[0] as Record<string, unknown>) : [] });
         send("done", {});
         controller.close();
       } catch (error) {
@@ -72,13 +130,14 @@ export async function POST(request: Request) {
 
 const RESPONSE_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     sql: { type: "string" },
     rationale: { type: "string" },
-    chart: { type: "object" },
+    chart: { type: "object", additionalProperties: false, properties: { type: { type: "string" } }, required: ["type"] },
   },
-  required: ["sql", "rationale"],
-};
+  required: ["sql", "rationale", "chart"],
+} as const;
 
 function buildPrompt(question: string, tables: any[]): string {
   const text = tables
