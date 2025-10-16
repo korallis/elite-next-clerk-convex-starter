@@ -71,6 +71,64 @@ export default defineSchema({
       .index("byConnection", ["connectionId"])
       .index("byConnectionAndKey", ["connectionId", "artifactKey"]),
 
+    // Semantic Catalog v2 (EAR)
+    semanticEntities: defineTable({
+      orgId: v.string(),
+      connectionId: v.id("orgConnections"),
+      key: v.string(), // e.g., "Entity:Candidate"
+      name: v.string(), // canonical name, e.g., "Candidate"
+      defaultTable: v.string(), // schema.table
+      idColumn: v.optional(v.string()),
+      synonyms: v.optional(v.array(v.string())),
+      embeddingId: v.optional(v.string()),
+      updatedAt: v.number(),
+    })
+      .index("byOrg", ["orgId"])
+      .index("byConnection", ["connectionId"])
+      .index("byConnectionAndKey", ["connectionId", "key"]),
+
+    semanticAttributes: defineTable({
+      orgId: v.string(),
+      connectionId: v.id("orgConnections"),
+      entityKey: v.string(), // references semanticEntities.key
+      name: v.string(), // e.g., "status"
+      sourceTable: v.string(), // schema.table
+      sourceColumn: v.string(),
+      join: v.optional(v.string()), // join expression from defaultTable -> sourceTable
+      synonyms: v.optional(v.array(v.string())),
+      embeddingId: v.optional(v.string()),
+      updatedAt: v.number(),
+    })
+      .index("byOrg", ["orgId"])
+      .index("byConnection", ["connectionId"])
+      .index("byEntity", ["entityKey"]),
+
+    semanticGraphEdges: defineTable({
+      orgId: v.string(),
+      connectionId: v.id("orgConnections"),
+      sourceTable: v.string(), // schema.table
+      sourceColumn: v.string(),
+      targetTable: v.string(), // schema.table
+      targetColumn: v.string(),
+      kind: v.string(), // fk|override
+      weight: v.optional(v.number()),
+      updatedAt: v.number(),
+    })
+      .index("byOrg", ["orgId"])
+      .index("byConnection", ["connectionId"])
+      .index("byTables", ["sourceTable", "targetTable"]),
+
+    semanticOverrides: defineTable({
+      orgId: v.string(),
+      connectionId: v.id("orgConnections"),
+      kind: v.string(), // boost|ban|synonym|join
+      target: v.string(), // e.g., table:schema.table, column:schema.table.column, entity:Name
+      payload: v.optional(v.string()), // JSON payload for details
+      updatedAt: v.number(),
+    })
+      .index("byOrg", ["orgId"])
+      .index("byConnection", ["connectionId"]),
+
     semanticSyncRuns: defineTable({
       orgId: v.string(),
       connectionId: v.id("orgConnections"),

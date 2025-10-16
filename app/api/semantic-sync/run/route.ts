@@ -9,6 +9,8 @@ import {
   recordConnectionVerification,
   upsertSyncStage,
 } from "@/lib/convexServerClient";
+import { getConvexClient } from "@/lib/convexServerClient";
+import { api } from "@/convex/_generated/api";
 
 type RunBody = {
   orgId: string;
@@ -151,6 +153,63 @@ export async function POST(request: Request) {
       }
     }
     await upsertSyncStage({ runId, stage, status: "completed", metrics: { processedTables, totalTables, processedColumns, totalColumns } });
+
+    // Phase: write catalog v2 (entities/attributes/graph) — heuristic prototype
+    stage = "write_catalog_v2";
+    await upsertSyncStage({ runId, stage, status: "running" });
+    try {
+      const convex = getConvexClient();
+      const adminToken = process.env.CONVEX_ADMIN_TOKEN as string; // required by admin routes
+      // Simple heuristic: entity per table with singularized name; id column guess.
+      for (const table of snapshot.tables) {
+        const canonical = table.name.replace(/^can_/i, "");
+        const name = toTitleCase(singularize(canonical));
+        const idCol = table.columns.find((c) => /(^|_)(id|pk)$/i.test(c.name))?.name || undefined;
+        await convex.mutation((api as any).semanticCatalog.upsertEntity, {
+          adminToken,
+          orgId,
+          connectionId,
+          key: `Entity:${name}`,
+          name,
+          defaultTable: `${table.schema}.${table.name}`,
+          idColumn: idCol,
+          synonyms: [name.toLowerCase(), pluralize(name.toLowerCase())],
+        });
+        // Attributes: create entries for text-like columns to seed dictionary
+        for (const col of table.columns) {
+          await convex.mutation((api as any).semanticCatalog.upsertAttribute, {
+            adminToken,
+            orgId,
+            connectionId,
+            entityKey: `Entity:${name}`,
+            name: col.name,
+            sourceTable: `${table.schema}.${table.name}`,
+            sourceColumn: col.name,
+            join: undefined,
+            synonyms: [col.name.replace(/_/g, " ")],
+          });
+        }
+      }
+      // Graph edges from foreign keys
+      for (const table of snapshot.tables) {
+        for (const fk of table.foreignKeys) {
+          await convex.mutation((api as any).semanticCatalog.upsertGraphEdge, {
+            adminToken,
+            orgId,
+            connectionId,
+            sourceTable: `${table.schema}.${table.name}`,
+            sourceColumn: fk.sourceColumn,
+            targetTable: fk.targetTable,
+            targetColumn: fk.targetColumn,
+            kind: "fk",
+            weight: 1,
+          });
+        }
+      }
+      await upsertSyncStage({ runId, stage, status: "completed" });
+    } catch (e) {
+      await upsertSyncStage({ runId, stage, status: "failed", error: String(e) });
+    }
 
     await markSyncRunCompleted(runId);
     await recordConnectionVerification({ orgId, connectionId, lastVerifiedAt: Date.now(), lastError: undefined });
