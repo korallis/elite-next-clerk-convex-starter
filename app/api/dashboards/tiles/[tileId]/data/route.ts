@@ -42,7 +42,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ tileId: str
   if (dimension) params["dimension"] = dimension;
 
   // Simple in-process cache keyed by tile+params for limited TTL
-  const ttlMs = parseInt(process.env.NEXT_PUBLIC_DASH_CACHE_TTL_MS || "300000", 10); // default 5m
+  const ttlMs = parseInt(process.env.NEXT_PUBLIC_DASH_CACHE_TTL_MS || "14400000", 10); // default 4h
   const cacheKey = (() => {
     const key = JSON.stringify({ tileId, startDate, endDate, dimension });
     return crypto.createHash("sha256").update(key).digest("hex");
