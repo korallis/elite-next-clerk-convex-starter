@@ -81,8 +81,16 @@ export default function DataMapPage() {
         <Card>
           <CardHeader>
             <CardTitle>Table: {selectedKey}</CardTitle>
-            {detail?.isStale && <CardDescription className="text-destructive">Semantic sync is stale. Consider rerunning.</CardDescription>}
-            {detail?.lastSyncAt && <CardDescription>Last sync: {new Date(detail.lastSyncAt).toLocaleString()}</CardDescription>}
+            {detail?.isStale && (
+              <CardDescription className="text-destructive">
+                Semantic sync is stale. Consider rerunning.
+              </CardDescription>
+            )}
+            {detail?.lastSyncAt && (
+              <CardDescription>
+                Last sync: {new Date(detail.lastSyncAt).toLocaleString()}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             {!detail && <div className="text-sm text-muted-foreground">{status || "Loading…"}</div>}
@@ -100,7 +108,7 @@ export default function DataMapPage() {
                           <tr key={c.key} className="border-t border-border/40">
                             <td className="p-2">{c.name}</td>
                             <td className="p-2">{c.dataType}</td>
-                            <td className="p-2 text-xs text-muted-foreground">{(c.sampleValues || []).slice(0,3).join(", ")}</td>
+                            <td className="p-2 text-xs text-muted-foreground">{(c.sampleValues || []).slice(0, 3).join(", ")}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -119,6 +127,16 @@ export default function DataMapPage() {
                     </ul>
                   ) : (
                     <p className="text-sm text-muted-foreground">No relationships found.</p>
+                  )}
+                  {Array.isArray(detail.businessQuestions) && detail.businessQuestions.length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="mb-2 text-sm font-semibold">Suggested Questions</h3>
+                      <ul className="list-disc pl-5 text-sm text-muted-foreground">
+                        {detail.businessQuestions.slice(0, 6).map((q: string, i: number) => (
+                          <li key={i}>{q}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               </div>

@@ -9,7 +9,8 @@ export async function GET(request: Request) {
   if (!orgId) return NextResponse.json({ error: "Organization is required" }, { status: 400 });
 
   const url = new URL(request.url);
-  const q = (url.searchParams.get("q") || "").toLowerCase();
+  const qRaw = url.searchParams.get("q") || "";
+  const q = qRaw.toLowerCase().trim();
   const connectionId = url.searchParams.get("connectionId");
   if (!q) return NextResponse.json({ results: [] });
   if (!connectionId) return NextResponse.json({ error: "connectionId is required" }, { status: 422 });
@@ -23,15 +24,20 @@ export async function GET(request: Request) {
   const results = artifacts
     .filter((a: any) => a.orgId === orgId)
     .filter((a: any) => {
+      if (!q) return true;
       const hay = `${a.artifactKey} ${JSON.stringify(a.payload || {})}`.toLowerCase();
       return hay.includes(q);
     })
     .slice(0, 50)
-    .map((a: any) => ({
-      id: a._id,
-      type: a.artifactType,
-      key: a.artifactKey,
-      payload: a.payload,
-    }));
+    .map((a: any) => {
+      const isColumn = a.artifactType === "column";
+      const tableKey = isColumn ? String(a.artifactKey).split(".").slice(0, 2).join(".") : a.artifactKey;
+      return {
+        id: `${a.artifactType}:${a.artifactKey}`,
+        type: a.artifactType,
+        key: tableKey,
+        payload: a.payload,
+      };
+    });
   return NextResponse.json({ results });
 }
