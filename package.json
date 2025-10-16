@@ -7,8 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run",
-    "test:jest": "jest --passWithNoTests"
+    "test": "jest --config jest.config.js --passWithNoTests",
+    "test:vitest": "vitest run",
+    "test:jest": "jest --config jest.config.js --passWithNoTests"
   },
   "dependencies": {
     "@clerk/backend": "^2.4.1",

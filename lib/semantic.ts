@@ -13,7 +13,7 @@ import {
   DEFAULT_SUMMARIZER_MODEL,
   tryGetOpenAIClient,
 } from "./openai";
-import { upsertVectors } from "./vectorStore";
+// Avoid importing qdrant-client (ESM) at module load time to keep Jest happy; load lazily where needed.
 
 const SAMPLE_COLUMN_LIMIT = parseInt(process.env.SEMANTIC_SAMPLE_COLUMNS || "4", 10);
 const SAMPLE_VALUE_LIMIT = parseInt(process.env.SEMANTIC_SAMPLE_VALUES || "5", 10);
@@ -488,6 +488,7 @@ async function embedAndStore(orgId: string, items: EmbeddingItem[]) {
             vector: vec,
             metadata: batch[i].item.metadata,
           }));
+          const { upsertVectors } = await import("./vectorStore");
           const ids = await upsertVectors(orgId, records);
           ids.forEach((id, i) => (batch[i].item.embeddingId = id));
           break; // success for this chunk
